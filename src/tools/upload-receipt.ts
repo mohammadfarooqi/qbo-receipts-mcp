@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readSync, realpathSync } from "node:fs";
 import { basename, normalize } from "node:path";
 import { QboClient } from "../client.js";
 import { AttachableSchema } from "../schema.js";
 import { isDryRun } from "../util/dry-run.js";
+import { sniffMimeType } from "../util/mime-sniff.js";
 
 const ALLOWED_CONTENT_TYPES = new Set([
     "application/pdf",
@@ -79,7 +80,6 @@ export async function uploadReceipt(
     validateUploadReceiptInput(input, { allowedPrefixes });
 
     // Canonicalize the path — resolves symlinks, normalizes separators.
-    // Any symlink that escapes the allowlist is caught here.
     let canonicalPath: string;
     try {
         canonicalPath = realpathSync.native(input.filePath);
@@ -97,12 +97,35 @@ export async function uploadReceipt(
         }
     }
 
-    const stat = statSync(canonicalPath);
-    if (stat.size > MAX_FILE_SIZE_BYTES) {
-        throw new Error(`File ${canonicalPath} is ${stat.size} bytes; max allowed is ${MAX_FILE_SIZE_BYTES} bytes (20 MB)`);
+    // SEC-3: open the file ONCE and use the same fd for size check and read.
+    // No TOCTOU window between stat and read — both operate on the same inode.
+    const fd = openSync(canonicalPath, "r");
+    let fileBytes: Buffer;
+    let sizeBytes: number;
+    try {
+        const stat = fstatSync(fd);
+        sizeBytes = stat.size;
+        if (sizeBytes > MAX_FILE_SIZE_BYTES) {
+            throw new Error(`File ${canonicalPath} is ${sizeBytes} bytes; max allowed is ${MAX_FILE_SIZE_BYTES} bytes (20 MB)`);
+        }
+        fileBytes = Buffer.alloc(sizeBytes);
+        let readSoFar = 0;
+        while (readSoFar < sizeBytes) {
+            const n = readSync(fd, fileBytes, readSoFar, sizeBytes - readSoFar, readSoFar);
+            if (n === 0) break;
+            readSoFar += n;
+        }
+        if (readSoFar !== sizeBytes) {
+            throw new Error(`Read ${readSoFar} bytes from ${canonicalPath}, expected ${sizeBytes}`);
+        }
+    } finally {
+        closeSync(fd);
     }
+
+    // SEC-4: verify magic bytes match the declared content type.
+    sniffMimeType(fileBytes, input.contentType);
+
     const fileName = input.fileNameOverride ?? basename(canonicalPath);
-    const fileBytes = readFileSync(canonicalPath);
 
     if (isDryRun(env)) {
         return {
@@ -112,7 +135,7 @@ export async function uploadReceipt(
                 path: `/v3/company/${client.getRealmId()}/upload`,
                 fileName,
                 contentType: input.contentType,
-                sizeBytes: stat.size,
+                sizeBytes,
                 entityType: input.entityType,
                 entityId: input.entityId
             }

@@ -1647,3 +1647,78 @@ describe("mime-sniff — sniffMimeType", () => {
         assert.ok(!SNIFFABLE_TYPES.has("text/plain"));
     });
 });
+
+import { uploadReceipt } from "../src/tools/upload-receipt.js";
+import { writeFileSync as writeFileSync3, mkdtempSync as mkdtempSync3, unlinkSync as unlinkSync3, realpathSync as realpathSync3 } from "node:fs";
+import { tmpdir as tmpdir2 } from "node:os";
+import { join as join2 } from "node:path";
+
+describe("upload-receipt — SEC-4 MIME sniffing", () => {
+    it("rejects a PNG file declared as application/pdf", async () => {
+        const dir = realpathSync3(mkdtempSync3(join2(tmpdir2(), "qbomcp-")));
+        const filePath = join2(dir, "fake.pdf");
+        writeFileSync3(filePath, Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]));
+        const fake = {
+            getRealmId: () => "REALM",
+            uploadAttachable: async () => { throw new Error("should not be called"); }
+        } as unknown as import("../src/client.js").QboClient;
+        try {
+            await assert.rejects(
+                uploadReceipt(fake, {
+                    filePath,
+                    contentType: "application/pdf",
+                    entityType: "Purchase",
+                    entityId: "1"
+                }, { QBO_ATTACH_ALLOWED_DIRS: dir }),
+                /does not match/
+            );
+        } finally {
+            unlinkSync3(filePath);
+        }
+    });
+
+    it("accepts a valid PDF file declared as application/pdf", async () => {
+        const dir = realpathSync3(mkdtempSync3(join2(tmpdir2(), "qbomcp-")));
+        const filePath = join2(dir, "real.pdf");
+        writeFileSync3(filePath, Buffer.concat([
+            Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34]),
+            Buffer.alloc(100, 0)
+        ]));
+        const fake = {
+            getRealmId: () => "REALM",
+            uploadAttachable: async () => ({ Id: "ATTACH1", FileName: "real.pdf" })
+        } as unknown as import("../src/client.js").QboClient;
+        try {
+            const result = await uploadReceipt(fake, {
+                filePath,
+                contentType: "application/pdf",
+                entityType: "Purchase",
+                entityId: "1"
+            }, { QBO_ATTACH_ALLOWED_DIRS: dir }) as { Id: string };
+            assert.equal(result.Id, "ATTACH1");
+        } finally {
+            unlinkSync3(filePath);
+        }
+    });
+
+    it("still accepts text/csv without sniffing", async () => {
+        const dir = realpathSync3(mkdtempSync3(join2(tmpdir2(), "qbomcp-")));
+        const filePath = join2(dir, "data.csv");
+        writeFileSync3(filePath, "a,b,c\n1,2,3\n");
+        const fake = {
+            getRealmId: () => "REALM",
+            uploadAttachable: async () => ({ Id: "ATTACH2", FileName: "data.csv" })
+        } as unknown as import("../src/client.js").QboClient;
+        try {
+            const result = await uploadReceipt(fake, {
+                filePath,
+                contentType: "text/csv",
+                entityType: "Purchase",
+                entityId: "1"
+            }, { QBO_ATTACH_ALLOWED_DIRS: dir }) as { Id: string };
+            assert.equal(result.Id, "ATTACH2");
+        } finally {
+            unlinkSync3(filePath);
+        }
+    });
+});
