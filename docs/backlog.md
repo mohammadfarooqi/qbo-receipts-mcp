@@ -56,7 +56,21 @@ Fixed in Tasks 20 + 21 of the v0.2.0 plan. New helper `src/util/mime-sniff.ts` e
 
 ---
 
-## v0.2.0 (before npm publish)
+## v0.2.x (discovered during real-sandbox validation — must-fix before npm publish)
+
+### [BUG-3] `create_purchase` requires exchangeRate when currencyCode is set, even for home currency
+**Source:** Real Intuit sandbox smoke test 2026-04-10 (v0.2.0 validation)
+**Severity:** Medium
+**Details:** `buildPurchasePayload` throws `"ExchangeRate is required when currencyCode is set"` whenever `currencyCode` is provided, regardless of whether it matches home currency. In practice a caller passing `currencyCode: "CAD"` to a CAD-home company is a valid no-op but is currently rejected. The workaround is to simply omit `currencyCode` for home-currency writes (QBO infers from the payment account's currency).
+**Fix:** Either (a) remove the requirement entirely and let QBO reject at the API layer if ExchangeRate is actually needed, (b) pass the home currency as a required input parameter so we can compare, or (c) only require ExchangeRate when `currencyCode !== "CAD"` as a hardcoded project-specific default. Option (a) is simplest; the existing Zod schema already documents the ExchangeRate field as "REQUIRED if currencyCode differs from home currency" but the runtime guard is stricter than that docstring.
+**Impact:** Low in practice — real catch-up workflows should omit currencyCode for CAD purchases and always provide exchangeRate for USD. But the error message is misleading.
+
+### [SCHEMA-2] `CurrencyRef` is not a queryable property in QBO's query language
+**Source:** Real Intuit sandbox smoke test 2026-04-10 (v0.2.0 validation)
+**Severity:** Medium
+**Details:** `buildPurchaseQuery` supports a `currencyCode` filter that generates `WHERE CurrencyRef = 'USD'`. QBO's `/query` endpoint returns `{"Message":"Invalid query","Detail":"QueryValidationError: property 'CurrencyRef' is not queryable","code":"4001"}`. The mock server does not enforce queryable-property rules so this slipped through all prior tests. The `search_vendors` tool has the same filter option and may have the same problem — needs validation.
+**Fix:** Remove the `currencyCode` filter from `searchPurchasesInputSchema` and `buildPurchaseQuery`. Callers who need currency matching should filter client-side on the returned rows. For `search_vendors`, test against real sandbox to confirm whether `WHERE CurrencyRef = 'USD'` works on Vendor entities (possible — Vendor may have different queryable-property rules than Purchase).
+**Regression test idea:** run the real smoke test script in CI-lite mode when possible, or add a mock-server rule that rejects `WHERE CurrencyRef` clauses to match Intuit's behavior.
 
 ### [SEC-5] Unicode/RLO/zero-width characters in filenames
 **Source:** Opus security review of Task 25 (2026-04-10)
