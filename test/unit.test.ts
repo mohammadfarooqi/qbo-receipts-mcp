@@ -1435,3 +1435,37 @@ describe("boc — fetchBocRate via local server", () => {
         }
     });
 });
+
+import { getBocRate, getBocRateInputSchema } from "../src/tools/get-boc-rate.js";
+
+describe("get-boc-rate — input validation", () => {
+    it("rejects invalid date format", () => {
+        assert.throws(() => getBocRateInputSchema.parse({ date: "2024/06/15" }));
+        assert.throws(() => getBocRateInputSchema.parse({ date: "15-06-2024" }));
+    });
+
+    it("accepts YYYY-MM-DD", () => {
+        const parsed = getBocRateInputSchema.parse({ date: "2024-06-15" });
+        assert.equal(parsed.date, "2024-06-15");
+    });
+});
+
+describe("get-boc-rate — fetches via BoC base URL override", () => {
+    it("returns rate and observationDate from a local mock", async () => {
+        const server = createServer((_req, res) => {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+                observations: [{ d: "2024-06-14", FXUSDCAD: { v: "1.3750" } }]
+            }));
+        });
+        await new Promise<void>((r) => server.listen(0, r));
+        const port = (server.address() as { port: number }).port;
+        try {
+            const result = await getBocRate({ date: "2024-06-15" }, { BOC_BASE_URL: `http://localhost:${port}` }) as { rate: number; observationDate: string };
+            assert.equal(result.rate, 1.375);
+            assert.equal(result.observationDate, "2024-06-14");
+        } finally {
+            await new Promise<void>((r) => server.close(() => r()));
+        }
+    });
+});
