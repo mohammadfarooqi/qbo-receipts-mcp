@@ -20,6 +20,13 @@ Fixed in Task 25 hardening commit. `uploadReceipt` now calls `fs.realpathSync.na
 ### [SEC-2] Allowlist prefix without trailing slash — FIXED 2026-04-10
 Fixed in Task 25 hardening commit. `validateUploadReceiptInput` now normalizes each allowlist prefix to end with `/` and appends `/` to the candidate path before the `startsWith` check.
 
+### [SCHEMA-1] PurchaseLineSchema rejected ItemBasedExpenseLineDetail — FIXED 2026-04-10
+**Source:** Real sandbox smoke test (2026-04-10, post-v0.1.0 tag)
+**Severity:** High (read path broken against real data)
+**Details:** The original `PurchaseLineSchema` used `DetailType: z.literal("AccountBasedExpenseLineDetail")` with a required `AccountBasedExpenseLineDetail` field. QBO's sandbox (and real production companies) returns Purchases with multiple line DetailType values — `ItemBasedExpenseLineDetail` (for item-based purchases like inventory), potentially `TaxLineDetail`, `SubTotalLineDetail`, etc. When `search_purchases` encountered any Purchase with a non-AccountBased line type, the entire `PurchaseQueryResponseSchema.parse()` call failed and the tool returned a validation error. Found on the very first smoke test against the sandbox: 4 of 20 sandbox demo Purchases use `ItemBasedExpenseLineDetail`.
+**Fix:** Loosened `PurchaseLineSchema` to accept any `DetailType` string, made `AccountBasedExpenseLineDetail` optional, and added `.passthrough()` for unknown fields. Write-side validation is unchanged: `buildPurchasePayload` always constructs `AccountBasedExpenseLineDetail` directly. Added two regression tests (one for `ItemBasedExpenseLineDetail`, one for a future-proof unknown DetailType). Commit `78e322c`.
+**Lesson:** Strict Zod literals on response schemas are brittle against real APIs. For read-side validation, prefer permissive schemas with passthrough and rely on type narrowing at consumption points.
+
 ---
 
 ## v0.1.0 (must-fix before first release)

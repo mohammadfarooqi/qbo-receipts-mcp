@@ -11,3 +11,6 @@ coverage/
 .idea/
 *.swp
 .claude/settings.local.json
+
+# Scripts are local smoke-test helpers, not shipped via npm
+# (already excluded by files allowlist, but explicit for clarity)
