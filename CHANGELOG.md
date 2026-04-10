@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-04-10
+
+### Security
+
+- **SEC-6 (promoted from low to high):** `create_purchase` now validates `sourceId` against `/^[A-Za-z0-9._:\-@]+$/` with a max length of 200 chars, and rejects the substring `sess:`. Previously, an attacker could plant a forged `sess:<tag>` marker in a purchase's `PrivateNote` by including it in `sourceId`, then trigger a legitimate `rollback_session` for that tag to sweep up an unrelated purchase. In isolation this was a cosmetic escape issue, but v0.2.0's new `rollback_session` tool turned it into a cross-tool exploit path. Also tightened `formatMemoMarker` to reject `existingNote` values containing `|`, CR, LF, or NUL.
+- **SAFETY-1:** `rollback_session` now clamps the `txnDateAfter`/`txnDateBefore` window to a maximum of 365 days and rejects inverted ranges. Previously the caller could pass arbitrary dates, turning the default 60-day window into a primitive for scanning the entire purchase history.
+
+### Unchanged
+
+- All v0.2.0 tools remain API-compatible. The new `sourceId` regex is strict enough to catch injection attempts but permissive enough to cover the real-world cases currently in use (Gmail message IDs, PayPal transaction IDs, manual descriptions).
+- No behavioral change to the happy path.
+
+---
+
 ## [0.2.0] — 2026-04-10
 
 ### Added
