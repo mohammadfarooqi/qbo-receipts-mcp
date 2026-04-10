@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { TokenRefreshResponseSchema } from "./schema.js";
 
 export interface QboClientOptions {
@@ -9,6 +11,13 @@ export interface QboClientOptions {
     tokenUrl: string;
     baseUrl: string;
     minIntervalMs?: number;
+    // When set, refreshAccessToken will atomically persist the updated access
+    // and refresh tokens back to this env file. Preserves other env vars via
+    // the same merge logic as writeTokensToEnv in oauth-cli.ts. Intuit rotates
+    // refresh tokens ~24h before expiry; without persistence, a long-running
+    // project loses the new refresh token and gets locked out ~100 days after
+    // the initial OAuth exchange.
+    persistPath?: string;
 }
 
 export class QboClient {
@@ -19,6 +28,7 @@ export class QboClient {
     private realmId: string;
     private tokenUrl: string;
     private baseUrl: string;
+    private persistPath?: string;
     private queue: Promise<unknown> = Promise.resolve();
     private minIntervalMs: number;
     private lastRequestAt = 0;
@@ -32,6 +42,7 @@ export class QboClient {
         this.tokenUrl = opts.tokenUrl;
         this.baseUrl = opts.baseUrl;
         this.minIntervalMs = opts.minIntervalMs ?? 150;
+        this.persistPath = opts.persistPath;
     }
 
     getAccessToken(): string { return this.accessToken; }
@@ -61,6 +72,9 @@ export class QboClient {
         const parsed = TokenRefreshResponseSchema.parse(await res.json());
         this.accessToken = parsed.access_token;
         this.refreshToken = parsed.refresh_token;
+        if (this.persistPath) {
+            persistTokensToEnvFile(this.persistPath, this.accessToken, this.refreshToken, this.realmId);
+        }
     }
 
     async enqueue<T>(fn: () => Promise<T>): Promise<T> {
@@ -183,6 +197,31 @@ export function clientFromEnv(env: Record<string, string | undefined>): QboClien
         refreshToken: env.QBO_REFRESH_TOKEN!,
         realmId: env.QBO_REALM_ID!,
         tokenUrl,
-        baseUrl
+        baseUrl,
+        persistPath: env.QBO_ENV_FILE
     });
+}
+
+// Atomically persist the updated access/refresh/realm to the env file,
+// preserving other env vars. Writes to a .tmp sibling then renameSync
+// (atomic on POSIX) so a crash mid-write doesn't truncate the file.
+// Mode 0600 on the final file.
+export function persistTokensToEnvFile(
+    envPath: string,
+    accessToken: string,
+    refreshToken: string,
+    realmId: string
+): void {
+    const existing = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
+    const lines = existing.split("\n").filter(l => {
+        const k = l.split("=")[0];
+        return k !== "QBO_ACCESS_TOKEN" && k !== "QBO_REFRESH_TOKEN" && k !== "QBO_REALM_ID";
+    });
+    lines.push(`QBO_ACCESS_TOKEN=${accessToken}`);
+    lines.push(`QBO_REFRESH_TOKEN=${refreshToken}`);
+    lines.push(`QBO_REALM_ID=${realmId}`);
+    const body = lines.filter(l => l.trim()).join("\n") + "\n";
+    const tmpPath = join(dirname(envPath), `.${envPath.split("/").pop()}.tmp.${process.pid}`);
+    writeFileSync(tmpPath, body, { mode: 0o600 });
+    renameSync(tmpPath, envPath);
 }

@@ -185,7 +185,7 @@ describe("client — refreshAccessToken", () => {
         const port = (server.address() as { port: number }).port;
 
         try {
-            const client = new QboClient({
+            const client = new QboClientP23({
                 clientId: "CID",
                 clientSecret: "SEC",
                 accessToken: "old-access",
@@ -213,7 +213,7 @@ describe("client — refreshAccessToken", () => {
 
 describe("client — rate limiter", () => {
     it("serializes requests with minimum interval", async () => {
-        const client = new QboClient({
+        const client = new QboClientP23({
             clientId: "c", clientSecret: "s",
             accessToken: "a", refreshToken: "r",
             realmId: "R", tokenUrl: "http://unused",
@@ -272,7 +272,7 @@ describe("client — fetchJson with 401 auto-refresh", () => {
         const port = (apiServer.address() as { port: number }).port;
 
         try {
-            const client = new QboClient({
+            const client = new QboClientP23({
                 clientId: "c", clientSecret: "s",
                 accessToken: "old-access", refreshToken: "r",
                 realmId: "R",
@@ -313,7 +313,7 @@ describe("client — uploadAttachable", () => {
         const port = (apiServer.address() as { port: number }).port;
 
         try {
-            const client = new QboClient({
+            const client = new QboClientP23({
                 clientId: "c", clientSecret: "s",
                 accessToken: "a", refreshToken: "r",
                 realmId: "R",
@@ -1860,5 +1860,186 @@ describe("rollback-session — date window sanity bound", () => {
     it("still accepts the default shape with only sessionTag", () => {
         const parsed = rollbackSessionInputSchemaSanity.parse({ sessionTag: "2026-04-10-0930" });
         assert.equal(parsed.sessionTag, "2026-04-10-0930");
+    });
+});
+
+// ============================================================================
+// client — persistTokensToEnvFile (v0.2.3 — refresh token rotation persistence)
+// ============================================================================
+
+import { persistTokensToEnvFile, QboClient as QboClientP23 } from "../src/client.js";
+import { readFileSync as readFileSyncP23, writeFileSync as writeFileSyncP23, existsSync as existsSyncP23, mkdtempSync as mkdtempSyncP23, rmSync as rmSyncP23, statSync as statSyncP23 } from "node:fs";
+import { tmpdir as tmpdirP23 } from "node:os";
+import { join as joinP23 } from "node:path";
+import { createServer as createServerP23 } from "node:http";
+
+describe("client — persistTokensToEnvFile", () => {
+    it("creates a new env file with mode 0600 when none exists", () => {
+        const dir = mkdtempSyncP23(joinP23(tmpdirP23(), "qbomcp-persist-"));
+        const envPath = joinP23(dir, ".env.test");
+        try {
+            persistTokensToEnvFile(envPath, "new-access", "new-refresh", "REALM-123");
+            assert.ok(existsSyncP23(envPath));
+            const body = readFileSyncP23(envPath, "utf8");
+            assert.ok(body.includes("QBO_ACCESS_TOKEN=new-access"));
+            assert.ok(body.includes("QBO_REFRESH_TOKEN=new-refresh"));
+            assert.ok(body.includes("QBO_REALM_ID=REALM-123"));
+            const mode = statSyncP23(envPath).mode & 0o777;
+            assert.equal(mode, 0o600, `expected mode 0600, got ${mode.toString(8)}`);
+        } finally {
+            rmSyncP23(dir, { recursive: true });
+        }
+    });
+
+    it("preserves other env vars and replaces only the 3 token fields", () => {
+        const dir = mkdtempSyncP23(joinP23(tmpdirP23(), "qbomcp-persist-"));
+        const envPath = joinP23(dir, ".env.test");
+        try {
+            writeFileSyncP23(envPath, [
+                "QBO_CLIENT_ID=keep-this",
+                "QBO_CLIENT_SECRET=keep-this-too",
+                "QBO_ACCESS_TOKEN=OLD-access",
+                "QBO_REFRESH_TOKEN=OLD-refresh",
+                "QBO_REALM_ID=OLD-realm",
+                "SOMETHING_ELSE=unrelated"
+            ].join("\n") + "\n");
+            persistTokensToEnvFile(envPath, "NEW-access", "NEW-refresh", "NEW-realm");
+            const body = readFileSyncP23(envPath, "utf8");
+            assert.ok(body.includes("QBO_CLIENT_ID=keep-this"));
+            assert.ok(body.includes("QBO_CLIENT_SECRET=keep-this-too"));
+            assert.ok(body.includes("SOMETHING_ELSE=unrelated"));
+            assert.ok(body.includes("QBO_ACCESS_TOKEN=NEW-access"));
+            assert.ok(body.includes("QBO_REFRESH_TOKEN=NEW-refresh"));
+            assert.ok(body.includes("QBO_REALM_ID=NEW-realm"));
+            // Old values must be gone
+            assert.ok(!body.includes("OLD-access"));
+            assert.ok(!body.includes("OLD-refresh"));
+            assert.ok(!body.includes("OLD-realm"));
+        } finally {
+            rmSyncP23(dir, { recursive: true });
+        }
+    });
+
+    it("handles multiple writes idempotently (later write replaces earlier)", () => {
+        const dir = mkdtempSyncP23(joinP23(tmpdirP23(), "qbomcp-persist-"));
+        const envPath = joinP23(dir, ".env.test");
+        try {
+            persistTokensToEnvFile(envPath, "access-1", "refresh-1", "realm-1");
+            persistTokensToEnvFile(envPath, "access-2", "refresh-2", "realm-2");
+            persistTokensToEnvFile(envPath, "access-3", "refresh-3", "realm-3");
+            const body = readFileSyncP23(envPath, "utf8");
+            assert.ok(body.includes("access-3"));
+            assert.ok(!body.includes("access-1"));
+            assert.ok(!body.includes("access-2"));
+            // Should only have exactly one of each token line
+            assert.equal(body.match(/^QBO_ACCESS_TOKEN=/gm)?.length, 1);
+            assert.equal(body.match(/^QBO_REFRESH_TOKEN=/gm)?.length, 1);
+            assert.equal(body.match(/^QBO_REALM_ID=/gm)?.length, 1);
+        } finally {
+            rmSyncP23(dir, { recursive: true });
+        }
+    });
+});
+
+describe("client — QboClient refreshAccessToken persists to env file when persistPath set", () => {
+    it("rewrites the env file with the rotated tokens after a successful refresh", async () => {
+        const dir = mkdtempSyncP23(joinP23(tmpdirP23(), "qbomcp-refresh-"));
+        const envPath = joinP23(dir, ".env.test");
+
+        // Seed with starting tokens
+        writeFileSyncP23(envPath, [
+            "QBO_CLIENT_ID=test-cid",
+            "QBO_CLIENT_SECRET=test-secret",
+            "QBO_ACCESS_TOKEN=initial-access",
+            "QBO_REFRESH_TOKEN=initial-refresh",
+            "QBO_REALM_ID=test-realm"
+        ].join("\n") + "\n");
+
+        // Mock token endpoint
+        const server = createServerP23((req, res) => {
+            let body = "";
+            req.on("data", (c) => { body += c.toString(); });
+            req.on("end", () => {
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({
+                    access_token: "ROTATED-access",
+                    refresh_token: "ROTATED-refresh",
+                    expires_in: 3600,
+                    x_refresh_token_expires_in: 8726400,
+                    token_type: "bearer"
+                }));
+            });
+        });
+        await new Promise<void>((r) => server.listen(0, r));
+        const port = (server.address() as { port: number }).port;
+        const tokenUrl = `http://localhost:${port}/oauth2/v1/tokens/bearer`;
+
+        try {
+            const client = new QboClientP23({
+                clientId: "test-cid",
+                clientSecret: "test-secret",
+                accessToken: "initial-access",
+                refreshToken: "initial-refresh",
+                realmId: "test-realm",
+                tokenUrl,
+                baseUrl: `http://localhost:${port}`,
+                persistPath: envPath
+            });
+
+            await client.refreshAccessToken();
+
+            // In-memory state updated
+            assert.equal(client.getAccessToken(), "ROTATED-access");
+            assert.equal(client.getRefreshToken(), "ROTATED-refresh");
+
+            // File updated
+            const body = readFileSyncP23(envPath, "utf8");
+            assert.ok(body.includes("QBO_ACCESS_TOKEN=ROTATED-access"));
+            assert.ok(body.includes("QBO_REFRESH_TOKEN=ROTATED-refresh"));
+            assert.ok(body.includes("QBO_CLIENT_ID=test-cid"));  // preserved
+            assert.ok(!body.includes("initial-access"));
+            assert.ok(!body.includes("initial-refresh"));
+        } finally {
+            await new Promise<void>((r) => server.close(() => r()));
+            rmSyncP23(dir, { recursive: true });
+        }
+    });
+
+    it("does NOT write any file when persistPath is not set", async () => {
+        const server = createServerP23((req, res) => {
+            let body = "";
+            req.on("data", (c) => { body += c.toString(); });
+            req.on("end", () => {
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({
+                    access_token: "R-access",
+                    refresh_token: "R-refresh",
+                    expires_in: 3600,
+                    x_refresh_token_expires_in: 8726400,
+                    token_type: "bearer"
+                }));
+            });
+        });
+        await new Promise<void>((r) => server.listen(0, r));
+        const port = (server.address() as { port: number }).port;
+
+        try {
+            const client = new QboClientP23({
+                clientId: "test-cid",
+                clientSecret: "test-secret",
+                accessToken: "a",
+                refreshToken: "r",
+                realmId: "realm",
+                tokenUrl: `http://localhost:${port}/oauth2/v1/tokens/bearer`,
+                baseUrl: `http://localhost:${port}`
+                // no persistPath
+            });
+
+            // Should simply not throw (no file to write)
+            await client.refreshAccessToken();
+            assert.equal(client.getAccessToken(), "R-access");
+        } finally {
+            await new Promise<void>((r) => server.close(() => r()));
+        }
     });
 });

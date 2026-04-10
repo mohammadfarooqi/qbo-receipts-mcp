@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] — 2026-04-10
+
+### Added
+
+- **Refresh token rotation persistence.** `QboClient.refreshAccessToken()` now optionally persists the rotated access and refresh tokens back to an env file via a new `persistPath` constructor option. `clientFromEnv` honors the `QBO_ENV_FILE` environment variable for this purpose (same semantics as the OAuth CLI's write path). The persistence uses atomic temp-file-plus-rename so a crash mid-write cannot corrupt the env file; the final file is written with mode `0600`. New exported helper: `persistTokensToEnvFile(envPath, accessToken, refreshToken, realmId)`.
+- Rationale: Intuit rotates refresh tokens as they approach their ~100-day expiry. Without persistence, long-running projects using the MCP would lose the new refresh token value when the script process exits, and the next run would attempt to use the old (now-invalid) refresh token. With this change, the env file is the source of truth and is kept in sync with Intuit's rotation.
+- 5 new unit tests covering: fresh file creation with mode 0600, preservation of unrelated env vars during rewrite, idempotent multiple writes, in-memory-plus-file update after a mocked refresh, and graceful handling when `persistPath` is not set. 178 tests total (was 173).
+
+### Security hygiene
+
+- `test/unit.test.ts`: changed the `CompanyInfoSchema` test fixture from `"Uqaab Consultants Inc."` to `"Test Company Inc."` for genericness in the public repo.
+- `scripts/smoke-gmail-demo.mjs` and `scripts/rollback-gmail-demo.mjs`: moved out of this repo and into the user's private `qb-bookkeeping` repo. These scripts contained real PayPal transaction IDs from actual 2024 purchases; while the IDs themselves are not credentials, they are identifying data that should not live in a public repository. The scripts are now local-only.
+
+### Unchanged
+
+- No new runtime dependencies. Still only `@modelcontextprotocol/sdk` and `zod`.
+- All 13 existing tools are API-compatible. The new `persistPath` option is opt-in via constructor or `QBO_ENV_FILE` env var.
+
+---
+
 ## [0.2.2] — 2026-04-10
 
 ### Fixed

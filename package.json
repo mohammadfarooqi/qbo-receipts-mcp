@@ -1,6 +1,6 @@
 {
   "name": "qbo-receipts-mcp",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "mcpName": "io.github.mohammadfarooqi/qbo-receipts",
   "description": "Local stdio MCP server for creating QuickBooks Online expenses with receipt attachments. Multi-currency aware.",
   "type": "module",
