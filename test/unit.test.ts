@@ -1252,3 +1252,79 @@ describe("update-vendor — dry-run", () => {
         assert.equal(result.wouldSend.body.DisplayName, "New Name");
     });
 });
+
+import { validateQuery, queryInputSchema, query as runQuery } from "../src/tools/query.js";
+
+describe("query — validateQuery", () => {
+    it("accepts a simple SELECT", () => {
+        validateQuery("SELECT * FROM Account");
+    });
+
+    it("accepts SELECT with WHERE and MAXRESULTS", () => {
+        validateQuery("SELECT * FROM Purchase WHERE TxnDate >= '2024-01-01' MAXRESULTS 100");
+    });
+
+    it("rejects queries under 10 chars", () => {
+        assert.throws(() => validateQuery("SELECT"), /length/i);
+    });
+
+    it("rejects queries over 2000 chars", () => {
+        const long = "SELECT * FROM X WHERE Id = '" + "a".repeat(2100) + "'";
+        assert.throws(() => validateQuery(long), /length/i);
+    });
+
+    it("rejects queries not starting with SELECT", () => {
+        assert.throws(() => validateQuery("INSERT INTO Foo VALUES (1)"), /SELECT/i);
+        assert.throws(() => validateQuery("describe Account"), /SELECT/i);
+    });
+
+    it("rejects queries containing ;", () => {
+        assert.throws(() => validateQuery("SELECT * FROM Account; DROP TABLE X"), /semicolon/i);
+    });
+
+    it("rejects mutation keywords (case-insensitive)", () => {
+        assert.throws(() => validateQuery("SELECT * FROM A WHERE UPDATE = 1"), /mutation/i);
+        assert.throws(() => validateQuery("SELECT insert FROM Account"), /mutation/i);
+        assert.throws(() => validateQuery("SELECT * FROM A deLETe"), /mutation/i);
+    });
+
+    it("rejects -- SQL comment", () => {
+        assert.throws(() => validateQuery("SELECT * FROM Account -- comment"), /comment/i);
+    });
+
+    it("rejects INTO keyword", () => {
+        assert.throws(() => validateQuery("SELECT * INTO Backup FROM Account"), /mutation/i);
+    });
+
+    it("rejects /* ... */ multiline comment (deviation: hardened beyond plan)", () => {
+        assert.throws(() => validateQuery("SELECT * FROM Account /* sneaky */"), /comment/i);
+    });
+
+    it("documents known false-positive: mutation keyword inside string literal is rejected", () => {
+        // This is an intentional tradeoff — the guard is a blunt instrument.
+        // Callers can restructure queries to avoid keyword-as-data in string literals.
+        assert.throws(
+            () => validateQuery("SELECT * FROM Vendor WHERE Notes = 'remember to DELETE old contacts'"),
+            /mutation/i
+        );
+    });
+
+    it("exports a Zod input schema that accepts { query: string }", () => {
+        const parsed = queryInputSchema.parse({ query: "SELECT * FROM Account" });
+        assert.equal(parsed.query, "SELECT * FROM Account");
+    });
+});
+
+describe("query — fetcher", () => {
+    it("calls /query with URL-encoded query string and returns raw JSON", async () => {
+        let capturedPath = "";
+        const fake = {
+            getRealmId: () => "REALM",
+            fetchJson: async (path: string) => { capturedPath = path; return { QueryResponse: { totalCount: 0 } }; }
+        } as unknown as import("../src/client.js").QboClient;
+        const result = await runQuery(fake, { query: "SELECT * FROM Account" }) as { QueryResponse: { totalCount: number } };
+        assert.ok(capturedPath.startsWith("/v3/company/REALM/query?query="));
+        assert.ok(capturedPath.includes(encodeURIComponent("SELECT * FROM Account")));
+        assert.equal(result.QueryResponse.totalCount, 0);
+    });
+});
