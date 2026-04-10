@@ -13,7 +13,8 @@ import {
     searchVendorsInputSchema, searchVendors,
     getVendorInputSchema, getVendor,
     createVendorInputSchema, createVendor,
-    updateVendorInputSchema, updateVendor
+    updateVendorInputSchema, updateVendor,
+    queryInputSchema, query as runQuery
 } from "./tools/index.js";
 
 const require = createRequire(import.meta.url);
@@ -135,6 +136,16 @@ server.registerTool("upload_receipt", {
 }, async (args) => {
     try {
         const result = await withClient(c => uploadReceipt(c, args));
+        return textResult(result);
+    } catch (e) { return errorResult(e); }
+});
+
+server.registerTool("query", {
+    description: "Raw QBO query endpoint (escape hatch). SELECT statements only. Max 2000 chars. Rejected: semicolons, SQL comments (--), mutation keywords (INSERT, UPDATE, DELETE, MERGE, TRUNCATE, INTO, CDC). Response is passed through without schema validation — caller interprets the shape. Use this when a specific tool doesn't cover your query pattern.",
+    inputSchema: queryInputSchema.shape
+}, async (args) => {
+    try {
+        const result = await withClient(c => runQuery(c, args));
         return textResult(result);
     } catch (e) { return errorResult(e); }
 });
