@@ -1328,3 +1328,110 @@ describe("query — fetcher", () => {
         assert.equal(result.QueryResponse.totalCount, 0);
     });
 });
+
+import { fetchBocRate, parseBocObservations, computeWindow } from "../src/util/boc.js";
+
+describe("boc — computeWindow", () => {
+    it("produces a 7-day window ending at the target date", () => {
+        const { startDate, endDate } = computeWindow("2024-06-15");
+        assert.equal(endDate, "2024-06-15");
+        assert.equal(startDate, "2024-06-08");
+    });
+
+    it("handles month boundaries", () => {
+        const { startDate, endDate } = computeWindow("2024-03-02");
+        assert.equal(endDate, "2024-03-02");
+        assert.equal(startDate, "2024-02-24");
+    });
+});
+
+describe("boc — parseBocObservations", () => {
+    it("returns the latest observation <= target date", () => {
+        const body = {
+            observations: [
+                { d: "2024-06-13", FXUSDCAD: { v: "1.3721" } },
+                { d: "2024-06-14", FXUSDCAD: { v: "1.3750" } }
+            ]
+        };
+        const result = parseBocObservations(body, "2024-06-15");
+        assert.equal(result.observationDate, "2024-06-14");
+        assert.equal(result.rate, 1.375);
+    });
+
+    it("picks the exact target date when present", () => {
+        const body = {
+            observations: [
+                { d: "2024-06-13", FXUSDCAD: { v: "1.3721" } },
+                { d: "2024-06-14", FXUSDCAD: { v: "1.3750" } },
+                { d: "2024-06-15", FXUSDCAD: { v: "1.3760" } }
+            ]
+        };
+        const result = parseBocObservations(body, "2024-06-15");
+        assert.equal(result.observationDate, "2024-06-15");
+        assert.equal(result.rate, 1.376);
+    });
+
+    it("ignores observations after the target date", () => {
+        const body = {
+            observations: [
+                { d: "2024-06-14", FXUSDCAD: { v: "1.3750" } },
+                { d: "2024-06-16", FXUSDCAD: { v: "1.3800" } }
+            ]
+        };
+        const result = parseBocObservations(body, "2024-06-15");
+        assert.equal(result.observationDate, "2024-06-14");
+    });
+
+    it("throws when no observations are <= target", () => {
+        const body = { observations: [{ d: "2024-06-16", FXUSDCAD: { v: "1.3800" } }] };
+        assert.throws(() => parseBocObservations(body, "2024-06-15"), /No BoC observation/);
+    });
+
+    it("throws when observations is empty", () => {
+        assert.throws(() => parseBocObservations({ observations: [] }, "2024-06-15"), /No BoC observation/);
+    });
+});
+
+describe("boc — fetchBocRate via local server", () => {
+    it("calls the Valet API and returns the latest observation <= target", async () => {
+        let capturedPath = "";
+        const server = createServer((req, res) => {
+            capturedPath = req.url || "";
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+                observations: [
+                    { d: "2024-06-14", FXUSDCAD: { v: "1.3750" } }
+                ]
+            }));
+        });
+        await new Promise<void>((r) => server.listen(0, r));
+        const port = (server.address() as { port: number }).port;
+        try {
+            const result = await fetchBocRate("2024-06-15", { baseUrl: `http://localhost:${port}` });
+            assert.equal(result.rate, 1.375);
+            assert.equal(result.observationDate, "2024-06-14");
+            assert.equal(result.date, "2024-06-15");
+            assert.ok(capturedPath.includes("start_date=2024-06-08"));
+            assert.ok(capturedPath.includes("end_date=2024-06-15"));
+        } finally {
+            await new Promise<void>((r) => server.close(() => r()));
+        }
+    });
+
+    it("throws on non-200 response", async () => {
+        const server = createServer((_req, res) => {
+            res.writeHead(503);
+            res.end("busy");
+        });
+        await new Promise<void>((r) => server.listen(0, r));
+        const port = (server.address() as { port: number }).port;
+        try {
+            await assert.rejects(
+                fetchBocRate("2024-06-15", { baseUrl: `http://localhost:${port}` }),
+                /BoC Valet API error/
+            );
+        } finally {
+            await new Promise<void>((r) => server.close(() => r()));
+        }
+    });
+});
