@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.tgz
+.env
+.env.*
+.DS_Store
+*.log
+coverage/
+.nyc_output/
+.vscode/
+.idea/
+*.swp
+.claude/settings.local.json
