@@ -22,3 +22,95 @@ export const TokenRefreshResponseSchema = z.object({
     token_type: z.string()
 });
 export type TokenRefreshResponse = z.infer<typeof TokenRefreshResponseSchema>;
+
+const RefSchema = z.object({
+    value: z.string(),
+    name: z.string().optional()
+});
+
+const MetaDataSchema = z.object({
+    CreateTime: z.string().optional(),
+    LastUpdatedTime: z.string().optional()
+}).optional();
+
+export const CompanyInfoSchema = z.object({
+    CompanyInfo: z.object({
+        Id: z.string(),
+        SyncToken: z.string(),
+        CompanyName: z.string(),
+        Country: z.string().optional(),
+        SupportedLanguages: z.string().optional(),
+        MetaData: MetaDataSchema
+    }),
+    time: z.string().optional()
+});
+export type CompanyInfoResponse = z.infer<typeof CompanyInfoSchema>;
+
+const AccountBasedExpenseLineDetailSchema = z.object({
+    AccountRef: RefSchema,
+    TaxCodeRef: RefSchema.optional(),
+    CustomerRef: RefSchema.optional(),
+    BillableStatus: z.string().optional()
+});
+
+const PurchaseLineSchema = z.object({
+    Id: z.string().optional(),
+    Amount: z.number(),
+    Description: z.string().optional(),
+    DetailType: z.literal("AccountBasedExpenseLineDetail"),
+    AccountBasedExpenseLineDetail: AccountBasedExpenseLineDetailSchema
+});
+
+export const PurchaseSchema = z.object({
+    Id: z.string(),
+    SyncToken: z.string(),
+    TxnDate: z.string(),
+    PaymentType: z.enum(["Cash", "Check", "CreditCard"]),
+    AccountRef: RefSchema,
+    EntityRef: z.object({
+        value: z.string(),
+        name: z.string().optional(),
+        type: z.enum(["Vendor", "Employee", "Customer"]).optional()
+    }).optional(),
+    CurrencyRef: RefSchema.optional(),
+    ExchangeRate: z.number().optional(),
+    TotalAmt: z.number(),
+    HomeTotalAmt: z.number().optional(),
+    PrivateNote: z.string().optional(),
+    DocNumber: z.string().optional(),
+    Line: z.array(PurchaseLineSchema),
+    MetaData: MetaDataSchema,
+    status: z.string().optional()
+});
+export type Purchase = z.infer<typeof PurchaseSchema>;
+
+export const PurchaseResponseSchema = z.object({
+    Purchase: PurchaseSchema,
+    time: z.string().optional()
+});
+
+export const PurchaseQueryResponseSchema = z.object({
+    QueryResponse: z.object({
+        Purchase: z.array(PurchaseSchema).optional(),
+        startPosition: z.number().optional(),
+        maxResults: z.number().optional(),
+        totalCount: z.number().optional()
+    }),
+    time: z.string().optional()
+});
+export type PurchaseQueryResponse = z.infer<typeof PurchaseQueryResponseSchema>;
+
+export const AttachableSchema = z.object({
+    Id: z.string(),
+    SyncToken: z.string().optional(),
+    FileName: z.string().optional(),
+    ContentType: z.string().optional(),
+    Size: z.number().optional(),
+    AttachableRef: z.array(z.object({
+        EntityRef: z.object({
+            type: z.string(),
+            value: z.string()
+        })
+    })).optional()
+});
+export type Attachable = z.infer<typeof AttachableSchema>;

@@ -444,3 +444,80 @@ describe("dry-run", () => {
         assert.equal(isDryRun({ QBO_DRY_RUN: "false" }), false);
     });
 });
+
+import { CompanyInfoSchema, PurchaseSchema, PurchaseQueryResponseSchema } from "../src/schema.js";
+
+describe("schema — CompanyInfoSchema", () => {
+    it("parses a valid CompanyInfo response envelope", () => {
+        const result = CompanyInfoSchema.parse({
+            CompanyInfo: {
+                Id: "1",
+                SyncToken: "0",
+                CompanyName: "Uqaab Consultants Inc.",
+                Country: "CA",
+                SupportedLanguages: "en"
+            },
+            time: "2026-04-10T00:00:00Z"
+        });
+        assert.equal(result.CompanyInfo.CompanyName, "Uqaab Consultants Inc.");
+    });
+});
+
+describe("schema — PurchaseSchema", () => {
+    it("parses a USD Purchase with ExchangeRate", () => {
+        const result = PurchaseSchema.parse({
+            Id: "42",
+            SyncToken: "0",
+            TxnDate: "2025-11-04",
+            PaymentType: "CreditCard",
+            AccountRef: { value: "1102", name: "USD Credit Card" },
+            CurrencyRef: { value: "USD", name: "US Dollar" },
+            ExchangeRate: 1.4090,
+            TotalAmt: 42.00,
+            PrivateNote: "auto:pp:ABC | sess:2026-04-10-0930",
+            Line: [{
+                Amount: 42.00,
+                DetailType: "AccountBasedExpenseLineDetail",
+                AccountBasedExpenseLineDetail: {
+                    AccountRef: { value: "80", name: "Subscriptions" }
+                }
+            }]
+        });
+        assert.equal(result.Id, "42");
+        assert.equal(result.ExchangeRate, 1.4090);
+    });
+});
+
+describe("schema — PurchaseQueryResponseSchema", () => {
+    it("parses a query response with purchases", () => {
+        const result = PurchaseQueryResponseSchema.parse({
+            QueryResponse: {
+                Purchase: [{
+                    Id: "42",
+                    SyncToken: "0",
+                    TxnDate: "2025-11-04",
+                    PaymentType: "CreditCard",
+                    AccountRef: { value: "1102" },
+                    TotalAmt: 42.00,
+                    Line: [{
+                        Amount: 42.00,
+                        DetailType: "AccountBasedExpenseLineDetail",
+                        AccountBasedExpenseLineDetail: { AccountRef: { value: "80" } }
+                    }]
+                }],
+                startPosition: 1,
+                maxResults: 1
+            },
+            time: "2026-04-10T00:00:00Z"
+        });
+        assert.equal(result.QueryResponse.Purchase?.length, 1);
+    });
+
+    it("parses an empty query response", () => {
+        const result = PurchaseQueryResponseSchema.parse({
+            QueryResponse: { startPosition: 1, maxResults: 0 },
+            time: "2026-04-10T00:00:00Z"
+        });
+        assert.equal(result.QueryResponse.Purchase, undefined);
+    });
+});
