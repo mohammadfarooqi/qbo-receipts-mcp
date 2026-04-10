@@ -11,7 +11,9 @@ import {
     uploadReceiptInputSchema, uploadReceipt,
     getAccountsInputSchema, getAccounts,
     searchVendorsInputSchema, searchVendors,
-    getVendorInputSchema, getVendor
+    getVendorInputSchema, getVendor,
+    createVendorInputSchema, createVendor,
+    updateVendorInputSchema, updateVendor
 } from "./tools/index.js";
 
 const require = createRequire(import.meta.url);
@@ -73,6 +75,26 @@ server.registerTool("get_vendor", {
 }, async (args) => {
     try {
         const result = await withClient(c => getVendor(c, args));
+        return textResult(result);
+    } catch (e) { return errorResult(e); }
+});
+
+server.registerTool("create_vendor", {
+    description: "Create a new QBO Vendor. CurrencyRef is PERMANENT at creation and cannot be changed later — if you need to change a vendor's currency, create a new vendor and archive the old one. For USD vendors, follow the project convention of suffixing displayName with '(USD)'. Honors QBO_DRY_RUN.",
+    inputSchema: createVendorInputSchema.shape
+}, async (args) => {
+    try {
+        const result = await withClient(c => createVendor(c, args));
+        return textResult(result);
+    } catch (e) { return errorResult(e); }
+});
+
+server.registerTool("update_vendor", {
+    description: "Update a QBO Vendor by Id + SyncToken. Sparse update — only provided fields are changed. Use active:false to archive a vendor. CurrencyRef cannot be updated (QBO rule) — this tool's input schema does not accept a currencyCode field at all. Honors QBO_DRY_RUN.",
+    inputSchema: updateVendorInputSchema.shape
+}, async (args) => {
+    try {
+        const result = await withClient(c => updateVendor(c, args));
         return textResult(result);
     } catch (e) { return errorResult(e); }
 });

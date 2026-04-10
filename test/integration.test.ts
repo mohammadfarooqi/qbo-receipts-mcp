@@ -33,18 +33,20 @@ after(async () => {
 });
 
 describe("MCP Server — tool registration", () => {
-    it("lists exactly 8 tools with expected names", async () => {
+    it("lists exactly 10 tools with expected names", async () => {
         const { tools } = await client.listTools();
-        assert.equal(tools.length, 8);
+        assert.equal(tools.length, 10);
         const names = tools.map(t => t.name).sort();
         assert.deepEqual(names, [
             "create_purchase",
+            "create_vendor",
             "delete_purchase",
             "get_accounts",
             "get_company_info",
             "get_vendor",
             "search_purchases",
             "search_vendors",
+            "update_vendor",
             "upload_receipt"
         ]);
     });
