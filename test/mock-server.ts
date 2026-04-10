@@ -9,12 +9,16 @@ export interface MockQboServerHandle {
 
 export interface MockQboServerOptions {
     purchases?: Record<string, unknown>;
+    accounts?: Record<string, unknown>;
+    vendors?: Record<string, unknown>;
     companyInfo?: unknown;
     onRefresh?: () => { access_token: string; refresh_token: string };
 }
 
 export async function startMockQboServer(opts: MockQboServerOptions = {}): Promise<MockQboServerHandle> {
     const purchases: Record<string, unknown> = { ...opts.purchases };
+    const accounts: Record<string, unknown> = { ...opts.accounts };
+    const vendors: Record<string, unknown> = { ...opts.vendors };
     const recorded: Array<{ method: string; url: string; body: string }> = [];
 
     const handleRequest = (req: IncomingMessage, res: ServerResponse) => {
@@ -56,14 +60,18 @@ export async function startMockQboServer(opts: MockQboServerOptions = {}): Promi
                 return;
             }
 
-            // Query endpoint (for search_purchases)
+            // Query endpoint — routes by SELECT FROM <entity>
             if (url.pathname.match(/\/v3\/company\/[^/]+\/query$/)) {
-                const query = url.searchParams.get("query") || "";
-                const rows = Object.values(purchases);
+                const query = (url.searchParams.get("query") || "").toUpperCase();
+                let rows: unknown[] = [];
+                let key = "Purchase";
+                if (query.includes("FROM PURCHASE")) { rows = Object.values(purchases); key = "Purchase"; }
+                else if (query.includes("FROM ACCOUNT")) { rows = Object.values(accounts); key = "Account"; }
+                else if (query.includes("FROM VENDOR")) { rows = Object.values(vendors); key = "Vendor"; }
                 res.writeHead(200, { "Content-Type": "application/json" });
                 res.end(JSON.stringify({
                     QueryResponse: {
-                        Purchase: query.includes("Purchase") ? rows : [],
+                        [key]: rows,
                         startPosition: 1,
                         maxResults: rows.length
                     },
@@ -111,6 +119,49 @@ export async function startMockQboServer(opts: MockQboServerOptions = {}): Promi
                     }],
                     time: "2026-04-10T00:00:00Z"
                 }));
+                return;
+            }
+
+            // Get single vendor
+            const vendorMatch = url.pathname.match(/\/v3\/company\/[^/]+\/vendor\/([^/]+)$/);
+            if (vendorMatch && req.method === "GET") {
+                const id = vendorMatch[1];
+                const vendor = vendors[id];
+                if (!vendor) {
+                    res.writeHead(404);
+                    res.end(`Vendor ${id} not found`);
+                    return;
+                }
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ Vendor: vendor, time: "2026-04-10T00:00:00Z" }));
+                return;
+            }
+
+            // Create or update vendor (both POST to /vendor)
+            if (url.pathname.match(/\/v3\/company\/[^/]+\/vendor$/) && req.method === "POST") {
+                const parsed = JSON.parse(body) as Record<string, unknown>;
+                if (parsed.sparse === true && typeof parsed.Id === "string") {
+                    // Update — merge into existing
+                    const existing = (vendors[parsed.Id] as Record<string, unknown>) || {};
+                    const merged: Record<string, unknown> = { ...existing, ...parsed, SyncToken: String(Number(existing.SyncToken ?? "0") + 1) };
+                    delete merged.sparse;
+                    vendors[parsed.Id] = merged;
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ Vendor: merged, time: "2026-04-10T00:00:00Z" }));
+                    return;
+                }
+                // Create
+                const id = String(Object.keys(vendors).length + 1000);
+                const created = {
+                    ...parsed,
+                    Id: id,
+                    SyncToken: "0",
+                    Active: true,
+                    MetaData: { CreateTime: "2026-04-10T00:00:00Z", LastUpdatedTime: "2026-04-10T00:00:00Z" }
+                };
+                vendors[id] = created;
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ Vendor: created, time: "2026-04-10T00:00:00Z" }));
                 return;
             }
 
