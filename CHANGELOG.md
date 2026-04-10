@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] — 2026-04-10
+
+### Fixed
+
+- **SCHEMA-1:** `PurchaseLineSchema` rejected Purchases with `ItemBasedExpenseLineDetail` lines. Real QBO realms (including Intuit's demo sandboxes) contain Purchases with multiple line DetailType values, so v0.1.0's strict `z.literal("AccountBasedExpenseLineDetail")` caused `search_purchases` to fail whenever any row used a different line type. Loosened the schema to accept any `DetailType` string with `.passthrough()` for unknown fields; write-side validation via `buildPurchasePayload` is unchanged. Added regression tests for `ItemBasedExpenseLineDetail` and future-proof unknown types. Found via real sandbox smoke test immediately after the v0.1.0 tag.
+
+### Added
+
+- `scripts/smoke-*.mjs` — local smoke test scripts used to validate the MCP against a real Intuit sandbox realm. Not shipped via npm (scripts/ is excluded from the `files` allowlist). Committed for reproducibility.
+
+### Validation against real Intuit sandbox
+
+Sandbox: `Sandbox Company CA 7419` (realm `9341456848594339`, Canadian Plus tier). Full CAD round trip verified end-to-end:
+
+- `get_company_info` returned the real company name
+- `search_purchases` with date filter returned existing demo purchases
+- `create_purchase` wrote a real Purchase (Id `182`), memo marker correctly formatted as `auto:manual:<id> | sess:<tag>`
+- `search_purchases` by exact `TotalAmt` + date found the created Purchase (dedup strategy validated)
+- `upload_receipt` multipart-uploaded a PDF, got back Attachable Id `637344` linked to Purchase:182
+- `delete_purchase` returned `status: Deleted`
+
+Every architectural decision from the v0.1.0 plan survived contact with real Intuit: hand-rolled OAuth, native `fetch`, multipart upload with `file_metadata_01`/`file_content_01` part names, soft-delete rollback via `?operation=delete`, and session-tagged memo markers.
+
+### Behavior notes from validation
+
+- QBO does NOT populate `HomeTotalAmt` on home-currency Purchases. Field is only present for foreign-currency transactions. Schema already handles this correctly (`HomeTotalAmt` optional). Only check `HomeTotalAmt` drift for foreign-currency transactions.
+- The sandbox had no USD-denominated vendors or accounts, so the USD write path (with explicit `ExchangeRate`) was only validated against the mock server, not real Intuit. Deferred to v0.2.0.
+
+---
+
 ## [0.1.0] — 2026-04-10
 
 ### Added
