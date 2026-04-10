@@ -161,3 +161,28 @@ export class QboClient {
         });
     }
 }
+
+const INTUIT_TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
+const SANDBOX_BASE = "https://sandbox-quickbooks.api.intuit.com";
+const PRODUCTION_BASE = "https://quickbooks.api.intuit.com";
+
+export function clientFromEnv(env: Record<string, string | undefined>): QboClient {
+    const required = ["QBO_CLIENT_ID", "QBO_CLIENT_SECRET", "QBO_ACCESS_TOKEN", "QBO_REFRESH_TOKEN", "QBO_REALM_ID"];
+    for (const key of required) {
+        if (!env[key]) throw new Error(`Missing required env var: ${key}`);
+    }
+    let baseUrl = env.QBO_BASE_URL;
+    if (!baseUrl) {
+        baseUrl = env.QBO_ENVIRONMENT === "production" ? PRODUCTION_BASE : SANDBOX_BASE;
+    }
+    const tokenUrl = env.QBO_TOKEN_URL || INTUIT_TOKEN_URL;
+    return new QboClient({
+        clientId: env.QBO_CLIENT_ID!,
+        clientSecret: env.QBO_CLIENT_SECRET!,
+        accessToken: env.QBO_ACCESS_TOKEN!,
+        refreshToken: env.QBO_REFRESH_TOKEN!,
+        realmId: env.QBO_REALM_ID!,
+        tokenUrl,
+        baseUrl
+    });
+}

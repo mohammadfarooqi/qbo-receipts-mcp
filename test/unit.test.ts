@@ -343,3 +343,47 @@ describe("client — uploadAttachable", () => {
         }
     });
 });
+
+import { clientFromEnv } from "../src/client.js";
+
+describe("client — clientFromEnv", () => {
+    it("constructs a QboClient from environment variables", () => {
+        const env = {
+            QBO_CLIENT_ID: "cid",
+            QBO_CLIENT_SECRET: "sec",
+            QBO_ACCESS_TOKEN: "at",
+            QBO_REFRESH_TOKEN: "rt",
+            QBO_REALM_ID: "999",
+            QBO_ENVIRONMENT: "sandbox"
+        };
+        const client = clientFromEnv(env);
+        assert.equal(client.getRealmId(), "999");
+        assert.ok(client.getBaseUrl().includes("sandbox-quickbooks"));
+    });
+
+    it("throws on missing required env", () => {
+        assert.throws(() => clientFromEnv({} as Record<string, string>), /QBO_CLIENT_ID/);
+    });
+
+    it("uses production base URL when QBO_ENVIRONMENT=production", () => {
+        const env = {
+            QBO_CLIENT_ID: "cid", QBO_CLIENT_SECRET: "sec",
+            QBO_ACCESS_TOKEN: "at", QBO_REFRESH_TOKEN: "rt",
+            QBO_REALM_ID: "999",
+            QBO_ENVIRONMENT: "production"
+        };
+        const client = clientFromEnv(env);
+        assert.equal(client.getBaseUrl(), "https://quickbooks.api.intuit.com");
+    });
+
+    it("honors QBO_BASE_URL override for tests", () => {
+        const env = {
+            QBO_CLIENT_ID: "cid", QBO_CLIENT_SECRET: "sec",
+            QBO_ACCESS_TOKEN: "at", QBO_REFRESH_TOKEN: "rt",
+            QBO_REALM_ID: "999",
+            QBO_BASE_URL: "http://localhost:1234"
+        };
+        const client = clientFromEnv(env);
+        assert.equal(client.getBaseUrl(), "http://localhost:1234");
+    });
+});
