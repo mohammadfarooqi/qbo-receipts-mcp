@@ -1004,3 +1004,45 @@ describe("schema — VendorQueryResponseSchema", () => {
         assert.equal(parsed.QueryResponse.Vendor, undefined);
     });
 });
+
+import { buildAccountsQuery, getAccountsInputSchema } from "../src/tools/get-accounts.js";
+
+describe("get-accounts — input validation", () => {
+    it("defaults maxResults to 500", () => {
+        const parsed = getAccountsInputSchema.parse({});
+        assert.equal(parsed.maxResults, 500);
+    });
+
+    it("rejects an invalid accountType", () => {
+        assert.throws(() => getAccountsInputSchema.parse({ accountType: "'; DROP TABLE" }));
+    });
+
+    it("accepts known accountType values", () => {
+        for (const t of ["Bank", "Credit Card", "Expense", "Accounts Payable", "Equity"]) {
+            const parsed = getAccountsInputSchema.parse({ accountType: t });
+            assert.equal(parsed.accountType, t);
+        }
+    });
+});
+
+describe("get-accounts — buildAccountsQuery", () => {
+    it("builds SELECT * FROM Account with MAXRESULTS", () => {
+        const q = buildAccountsQuery({ maxResults: 500 });
+        assert.equal(q, "SELECT * FROM Account ORDER BY Name MAXRESULTS 500");
+    });
+
+    it("adds AccountType clause", () => {
+        const q = buildAccountsQuery({ accountType: "Bank", maxResults: 500 });
+        assert.equal(q, "SELECT * FROM Account WHERE AccountType = 'Bank' ORDER BY Name MAXRESULTS 500");
+    });
+
+    it("adds Active clause", () => {
+        const q = buildAccountsQuery({ active: true, maxResults: 100 });
+        assert.equal(q, "SELECT * FROM Account WHERE Active = true ORDER BY Name MAXRESULTS 100");
+    });
+
+    it("combines multiple clauses with AND", () => {
+        const q = buildAccountsQuery({ accountType: "Expense", active: true, maxResults: 50 });
+        assert.equal(q, "SELECT * FROM Account WHERE AccountType = 'Expense' AND Active = true ORDER BY Name MAXRESULTS 50");
+    });
+});
