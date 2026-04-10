@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] — 2026-04-10
+
+### Fixed
+
+- **SCHEMA-2:** `search_purchases` and `search_vendors` no longer accept a `currencyCode` filter. QBO's query language does not support `CurrencyRef` as a queryable property on `Purchase` or `Vendor` entities — real Intuit returns HTTP 400 with `"property 'CurrencyRef' is not queryable"`. The mock server did not enforce this rule, so the bug survived all prior tests until real-sandbox validation. Callers who need currency-specific dedup should filter client-side on the returned rows' `CurrencyRef.value` field. Input schemas silently drop the field rather than throwing; the WHERE clause builders never emit the clause.
+- **BUG-3:** Improved the error message in `create_purchase` when `currencyCode` is set without `exchangeRate`. Previous message just said "ExchangeRate is required when currencyCode is set" which was misleading for home-currency callers. New message explains that home-currency transactions should omit `currencyCode` entirely (QBO infers from the payment account), and foreign-currency transactions must provide an exchange rate (suggests `get_boc_rate` for CAD/USD).
+
+### Validation
+
+Real-Intuit sandbox round-trip against `Sandbox Company CA 7419` (realm `9341456848594339`):
+
+- CAD purchase created (id 187) with receipt attachment.
+- USD purchase created (id 188) with explicit `ExchangeRate: 1.3751` from `get_boc_rate` for 2024-06-14. **First real-Intuit USD write in qbo-receipts-mcp history.**
+- `search_purchases` dedup by date + amount: 1 hit, correctly matched by Id.
+- `rollback_session`: swept all 6 session-tagged test purchases (2 from this run + 4 from prior failed runs) in one call.
+- `update_vendor active: false` archived test vendors cleanly.
+
+### Unchanged
+
+- All v0.2.1 security hardening retained.
+- No other behavioral changes.
+
+---
+
 ## [0.2.1] — 2026-04-10
 
 ### Security
