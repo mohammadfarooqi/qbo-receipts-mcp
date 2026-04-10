@@ -29,25 +29,24 @@ Fixed in Task 25 hardening commit. `validateUploadReceiptInput` now normalizes e
 
 ---
 
-## v0.1.0 (must-fix before first release)
+## v0.2.0 — Resolved
 
-_All previously-listed items are resolved. See "v0.1.0 — Resolved" above._
+### [SEC-3] TOCTOU between `statSync` and `readFileSync` — FIXED 2026-04-10
+Fixed in Task 21 of the v0.2.0 plan. `uploadReceipt` was refactored to open the canonical path once with `openSync`, use `fstatSync(fd)` for the size check, allocate a pre-sized buffer via `Buffer.alloc`, and read via `readSync` in a loop from the same descriptor. `closeSync(fd)` runs in a `finally` block. No TOCTOU window between stat and read — both operate on the same inode via the fd. Post-open path swaps do not affect the read.
+
+### [SEC-4] MIME sniffing — FIXED 2026-04-10
+Fixed in Tasks 20 + 21 of the v0.2.0 plan. New helper `src/util/mime-sniff.ts` exports `sniffMimeType(buf, declaredType)` which verifies the first N bytes of a file against a magic-byte signature for the declared content type. Signatures cover `application/pdf` (`%PDF-`), `image/png`, `image/jpeg`, `image/gif`, `image/tiff` (both LE and BE), and the ZIP container used by DOCX/XLSX. `text/plain` and `text/csv` skip sniffing (no reliable magic bytes). The helper is called inside `uploadReceipt` after the file bytes are read and before the upload happens. Known tradeoff: DOCX/XLSX disambiguation is not implemented — any ZIP file passes as OfficeXML. Logged as v0.3.0 candidate if stricter validation is ever needed.
+
+### [SEC-10] Unicode homoglyph bypass in query tool mutation keyword check — NEW, DEFERRED
+**Source:** Opus code review of Task 13 (2026-04-10)
+**Severity:** Very low (defense-in-depth gap, not exploitable)
+**Details:** `validateQuery` uses ASCII `\b` word-boundary regex against uppercased mutation keywords. A query containing `SELECT * FROM Vendor WHERE x = 'ＩＮＳＥＲＴ'` (fullwidth Latin) would pass the keyword check because `\bINSERT\b` doesn't match `ＩＮＳＥＲＴ`. The prefix check `/^SELECT\s/i` is ASCII-only so it does correctly reject a fullwidth SELECT prefix.
+**Non-exploitability:** QBO's `/query` endpoint is a read-only GET. It does not execute DML. A mutation keyword that slips through our guard would just be sent to QBO as part of a query string and rejected at the API layer or interpreted as literal data. This is a guard inconsistency, not a security hole.
+**Fix (if ever needed):** Unicode-normalize (NFKC) the input before running the keyword check, or reject non-ASCII characters entirely.
 
 ---
 
 ## v0.2.0 (before npm publish)
-
-### [SEC-3] TOCTOU between `statSync` and `readFileSync` in `upload_receipt`
-**Source:** Opus security review of Task 25 (2026-04-10)
-**Severity:** Medium
-**Details:** Between the size check (`statSync`) and the read (`readFileSync`), an attacker with write access could swap the file, bypassing the 20 MB cap.
-**Fix:** Open file once with `openSync`, use `fstatSync(fd)` + `readSync` on the same descriptor.
-
-### [SEC-4] No MIME sniffing — content type is trusted from input
-**Source:** Opus security review of Task 25 (2026-04-10)
-**Severity:** Medium
-**Details:** A `.exe` renamed to `receipt.pdf` with `contentType: application/pdf` passes all checks. QBO stores whatever bytes we send.
-**Fix:** Magic-byte validation (e.g., `%PDF-` for PDF, `\x89PNG` for PNG, `\xFF\xD8\xFF` for JPEG) before upload. Reject mismatches.
 
 ### [SEC-5] Unicode/RLO/zero-width characters in filenames
 **Source:** Opus security review of Task 25 (2026-04-10)
@@ -73,20 +72,11 @@ _All previously-listed items are resolved. See "v0.1.0 — Resolved" above._
 **Details:** `{ dryRun: true, wouldSend: { ..., body: payload } }` — `payload` is the same object that would be sent on a real call. A caller that inspects then mutates the dry-run output could affect a subsequent non-dry-run call.
 **Fix:** `structuredClone(payload)` in the dry-run branch.
 
-### [PRODUCT-1] `get_accounts` tool
-Needed for production workflow: fetching the chart of accounts to categorize expenses.
-
-### [PRODUCT-2] Vendor CRUD tools
-`get_vendor`, `search_vendors`, `create_vendor`, `update_vendor`. Needed for production workflow.
-
-### [PRODUCT-3] `query` tool
-Raw QBO SQL passthrough for edge cases not covered by specific tools.
-
-### [PRODUCT-4] `get_boc_rate` tool
-Wraps Bank of Canada Valet API for historical CAD/USD rates. Needed for multi-currency historical catch-up.
-
-### [PRODUCT-5] `rollback_session` tool
-Convenience tool that queries for all Purchases with a given session tag in `PrivateNote` and soft-deletes them in one call. Currently the caller has to do this in two steps.
+### [PRODUCT-1] `get_accounts` tool — SHIPPED in v0.2.0
+### [PRODUCT-2] Vendor CRUD tools — SHIPPED in v0.2.0 (`get_vendor`, `search_vendors`, `create_vendor`, `update_vendor`)
+### [PRODUCT-3] `query` tool — SHIPPED in v0.2.0
+### [PRODUCT-4] `get_boc_rate` tool — SHIPPED in v0.2.0
+### [PRODUCT-5] `rollback_session` tool — SHIPPED in v0.2.0
 
 ### [PRODUCT-6] MCP registry `server.json`
 Required for the Anthropic MCP registry listing. Follow canlii-mcp pattern.
