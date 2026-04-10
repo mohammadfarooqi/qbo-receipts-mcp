@@ -8,6 +8,18 @@ Every item here originated from real dogfooding — either code review during im
 
 ## v0.1.0 (must-fix before first release)
 
+### [PKG-1] `bin` entries point to wrong paths — binaries unusable after install
+**Source:** Task 30 validation scan (2026-04-09)
+**Severity:** High (release-blocking)
+**Details:** `package.json` declares `"bin": { "qbo-receipts-mcp": "dist/index.js", "qbo-receipts-mcp-oauth": "dist/oauth-cli.js" }`, but `tsconfig.json` sets `rootDir: "."` and `include: ["src/**/*.ts", "test/**/*.ts"]`, so `tsc` emits to `dist/src/index.js` and `dist/src/oauth-cli.js`. After `npm install -g qbo-receipts-mcp` the symlinks created by npm will point at non-existent files and `npx qbo-receipts-mcp` will fail with ENOENT. Local `npm run start` also breaks — it references `dist/index.js`. This is masked during development because `npm test` runs `node --test dist/test/...` directly.
+**Fix:** Either (a) change tsconfig to `rootDir: "./src"` and compile tests separately, or (b) update `package.json` `bin` + `start`/`oauth` scripts to `dist/src/index.js` and `dist/src/oauth-cli.js`. Option (a) is cleaner because it keeps `dist/` free of the `src/` prefix. Either way, the `files` array should also add `!dist/test/**` or the test compilation should move out of `dist/`. Must be fixed before v0.1.0 tag.
+
+### [PKG-2] `dist/test/**` files ship in the published tarball
+**Source:** Task 30 validation scan (2026-04-09)
+**Severity:** Medium
+**Details:** `npm pack --dry-run` reports `dist/test/integration.test.js` (7.0 kB), `dist/test/mock-server.js` (4.9 kB), and `dist/test/unit.test.js` (31.7 kB) inside the tarball. Test files should not ship to npm consumers — they bloat the package (~44 kB of the 81 kB unpacked size is test code) and leak internal test fixtures. Caused by the same `rootDir: "."` setting as PKG-1 combined with `"files": ["dist/"]`.
+**Fix:** Fixing PKG-1 via `rootDir: "./src"` resolves this by putting tests in a separate build output. Alternatively, add a separate `tsconfig.test.json` that emits elsewhere (e.g., `build/test/`) and keep `dist/` for the publishable artifacts only.
+
 ### [SEC-1] Symlink following in `upload_receipt`
 **Source:** Opus security review of Task 25 (2026-04-10)
 **Severity:** High
