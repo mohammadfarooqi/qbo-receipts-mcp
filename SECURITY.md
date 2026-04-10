@@ -2,14 +2,27 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in this MCP server, please report it responsibly:
+If you discover a security vulnerability in this MCP server, please report it privately — **do not open a public issue with exploit details.**
 
-1. **Do NOT open a public issue** for security vulnerabilities
-2. Email **mohammad.farooqi@gmail.com** with:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Potential impact
-3. You can expect an initial response within 48 hours
+### Preferred: GitHub Private Vulnerability Reporting
+
+1. Go to the [Security tab](https://github.com/mohammadfarooqi/qbo-receipts-mcp/security/advisories/new) of this repository
+2. Click **"Report a vulnerability"** (the green button)
+3. Fill in the private advisory form with:
+   - A clear description of the vulnerability
+   - Steps to reproduce (a minimal proof-of-concept helps if applicable)
+   - Potential impact and affected versions
+   - Any remediation you'd suggest
+
+GitHub's private vulnerability reporting keeps the discussion confidential between you and the maintainer until a fix is ready and a coordinated disclosure is published. This is the preferred channel for anything that could be exploited against a real QuickBooks Online realm or used to leak credentials or data.
+
+You can expect an initial response within 48 hours.
+
+See GitHub's [privately reporting a security vulnerability](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability) guide for details about the reporter flow.
+
+### For non-security bugs, feature requests, or general questions
+
+Open a regular issue at https://github.com/mohammadfarooqi/qbo-receipts-mcp/issues. Please do NOT include exploit details in public issues — escalate to the private advisory flow above if you suspect a real vulnerability.
 
 ## Scope
 
