@@ -550,3 +550,83 @@ describe("search-purchases — buildPurchaseQuery", () => {
         assert.throws(() => buildPurchaseQuery({ currencyCode: "USD' OR 1=1--" }), /Invalid/);
     });
 });
+
+import { buildPurchasePayload } from "../src/tools/create-purchase.js";
+
+describe("create-purchase — buildPurchasePayload", () => {
+    it("builds a minimal CAD purchase with memo marker", () => {
+        const payload = buildPurchasePayload({
+            txnDate: "2026-01-15",
+            paymentType: "CreditCard",
+            paymentAccountId: "1101",
+            totalAmt: 113.00,
+            expenseAccountId: "80",
+            source: "gmail",
+            sourceId: "MSG123",
+            sessionTag: "2026-04-10-0930"
+        });
+        assert.equal(payload.TxnDate, "2026-01-15");
+        assert.equal(payload.PaymentType, "CreditCard");
+        assert.equal((payload.AccountRef as { value: string }).value, "1101");
+        assert.equal((payload.Line as Array<{ Amount: number }>)[0].Amount, 113.00);
+        assert.equal(((payload.Line as Array<{ AccountBasedExpenseLineDetail: { AccountRef: { value: string } } }>)[0]).AccountBasedExpenseLineDetail.AccountRef.value, "80");
+        assert.equal(payload.PrivateNote, "auto:gmail:MSG123 | sess:2026-04-10-0930");
+    });
+    it("includes CurrencyRef and ExchangeRate when provided", () => {
+        const payload = buildPurchasePayload({
+            txnDate: "2025-11-04",
+            paymentType: "CreditCard",
+            paymentAccountId: "1102",
+            totalAmt: 42.00,
+            expenseAccountId: "80",
+            source: "pp",
+            sourceId: "TXN1",
+            sessionTag: "2026-04-10-0930",
+            currencyCode: "USD",
+            exchangeRate: 1.4090
+        });
+        assert.equal((payload.CurrencyRef as { value: string })?.value, "USD");
+        assert.equal(payload.ExchangeRate, 1.4090);
+    });
+    it("includes vendor entity ref when provided", () => {
+        const payload = buildPurchasePayload({
+            txnDate: "2026-01-15",
+            paymentType: "CreditCard",
+            paymentAccountId: "1101",
+            totalAmt: 113.00,
+            expenseAccountId: "80",
+            vendorId: "55",
+            source: "manual",
+            sourceId: "demo",
+            sessionTag: "2026-04-10-0930"
+        });
+        const ref = payload.EntityRef as { value: string; type: string };
+        assert.equal(ref?.value, "55");
+        assert.equal(ref?.type, "Vendor");
+    });
+    it("rejects invalid session tag at build time", () => {
+        assert.throws(() => buildPurchasePayload({
+            txnDate: "2026-01-15",
+            paymentType: "CreditCard",
+            paymentAccountId: "1101",
+            totalAmt: 113.00,
+            expenseAccountId: "80",
+            source: "gmail",
+            sourceId: "MSG123",
+            sessionTag: "bad-tag"
+        }), /Invalid session tag/);
+    });
+    it("rejects USD without ExchangeRate", () => {
+        assert.throws(() => buildPurchasePayload({
+            txnDate: "2025-11-04",
+            paymentType: "CreditCard",
+            paymentAccountId: "1102",
+            totalAmt: 42.00,
+            expenseAccountId: "80",
+            source: "pp",
+            sourceId: "TXN1",
+            sessionTag: "2026-04-10-0930",
+            currencyCode: "USD"
+        }), /ExchangeRate is required/);
+    });
+});
