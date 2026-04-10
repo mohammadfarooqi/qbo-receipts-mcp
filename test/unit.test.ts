@@ -1586,3 +1586,64 @@ describe("rollback-session — real-delete path", () => {
         assert.deepEqual(deleted, ["5"]);
     });
 });
+
+import { sniffMimeType, SNIFFABLE_TYPES } from "../src/util/mime-sniff.js";
+
+describe("mime-sniff — sniffMimeType", () => {
+    it("accepts a valid PDF header", () => {
+        const buf = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34]); // %PDF-1.4
+        sniffMimeType(buf, "application/pdf");
+    });
+
+    it("rejects a PNG declared as PDF", () => {
+        const buf = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        assert.throws(() => sniffMimeType(buf, "application/pdf"), /does not match/);
+    });
+
+    it("accepts a valid PNG header", () => {
+        const buf = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00]);
+        sniffMimeType(buf, "image/png");
+    });
+
+    it("accepts a valid JPEG header", () => {
+        const buf = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10]);
+        sniffMimeType(buf, "image/jpeg");
+    });
+
+    it("accepts GIF87a and GIF89a", () => {
+        sniffMimeType(Buffer.from("GIF87a\0\0"), "image/gif");
+        sniffMimeType(Buffer.from("GIF89a\0\0"), "image/gif");
+    });
+
+    it("accepts little-endian and big-endian TIFF", () => {
+        sniffMimeType(Buffer.from([0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00]), "image/tiff");
+        sniffMimeType(Buffer.from([0x4D, 0x4D, 0x00, 0x2A, 0x00, 0x00, 0x00, 0x08]), "image/tiff");
+    });
+
+    it("accepts ZIP-based DOCX/XLSX", () => {
+        const buf = Buffer.from([0x50, 0x4B, 0x03, 0x04, 0x14, 0x00]); // PK\x03\x04
+        sniffMimeType(buf, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        sniffMimeType(buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    });
+
+    it("skips sniffing for text/plain and text/csv", () => {
+        const buf = Buffer.from("hello,world\n");
+        sniffMimeType(buf, "text/plain");
+        sniffMimeType(buf, "text/csv");
+    });
+
+    it("throws on a buffer too small to check", () => {
+        assert.throws(() => sniffMimeType(Buffer.from([0x25]), "application/pdf"), /too small/);
+    });
+
+    it("throws on an executable declared as PDF", () => {
+        const buf = Buffer.from([0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00]); // MZ = Windows EXE
+        assert.throws(() => sniffMimeType(buf, "application/pdf"), /does not match/);
+    });
+
+    it("SNIFFABLE_TYPES contains the expected keys", () => {
+        assert.ok(SNIFFABLE_TYPES.has("application/pdf"));
+        assert.ok(SNIFFABLE_TYPES.has("image/png"));
+        assert.ok(!SNIFFABLE_TYPES.has("text/plain"));
+    });
+});
