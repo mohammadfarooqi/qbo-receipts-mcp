@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, normalize } from "node:path";
 import { QboClient } from "../client.js";
 import { AttachableSchema } from "../schema.js";
@@ -46,7 +46,9 @@ export function validateUploadReceiptInput(input: UploadReceiptInput, opts: Vali
     }
     const normalized = normalize(input.filePath);
     if (opts.allowedPrefixes && opts.allowedPrefixes.length > 0) {
-        if (!opts.allowedPrefixes.some(p => normalized.startsWith(p))) {
+        const prefixesWithSlash = opts.allowedPrefixes.map(p => p.endsWith("/") ? p : p + "/");
+        const normalizedForMatch = normalized.endsWith("/") ? normalized : normalized + "/";
+        if (!prefixesWithSlash.some(p => normalizedForMatch.startsWith(p))) {
             throw new Error(`filePath ${normalized} is outside allowed directories: ${opts.allowedPrefixes.join(", ")}`);
         }
     }
@@ -76,12 +78,31 @@ export async function uploadReceipt(
     const allowedPrefixes = env.QBO_ATTACH_ALLOWED_DIRS?.split(":").filter(Boolean) ?? [];
     validateUploadReceiptInput(input, { allowedPrefixes });
 
-    const stat = statSync(input.filePath);
-    if (stat.size > MAX_FILE_SIZE_BYTES) {
-        throw new Error(`File ${input.filePath} is ${stat.size} bytes; max allowed is ${MAX_FILE_SIZE_BYTES} bytes (20 MB)`);
+    // Canonicalize the path — resolves symlinks, normalizes separators.
+    // Any symlink that escapes the allowlist is caught here.
+    let canonicalPath: string;
+    try {
+        canonicalPath = realpathSync.native(input.filePath);
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`Cannot resolve filePath ${input.filePath}: ${msg}`);
     }
-    const fileName = input.fileNameOverride ?? basename(input.filePath);
-    const fileBytes = readFileSync(input.filePath);
+
+    // Re-check the allowlist against the canonical (post-symlink) path.
+    if (allowedPrefixes.length > 0) {
+        const prefixesWithSlash = allowedPrefixes.map(p => p.endsWith("/") ? p : p + "/");
+        const candidate = canonicalPath.endsWith("/") ? canonicalPath : canonicalPath + "/";
+        if (!prefixesWithSlash.some(p => candidate.startsWith(p))) {
+            throw new Error(`filePath ${input.filePath} resolves to ${canonicalPath} which is outside allowed directories: ${allowedPrefixes.join(", ")}`);
+        }
+    }
+
+    const stat = statSync(canonicalPath);
+    if (stat.size > MAX_FILE_SIZE_BYTES) {
+        throw new Error(`File ${canonicalPath} is ${stat.size} bytes; max allowed is ${MAX_FILE_SIZE_BYTES} bytes (20 MB)`);
+    }
+    const fileName = input.fileNameOverride ?? basename(canonicalPath);
+    const fileBytes = readFileSync(canonicalPath);
 
     if (isDryRun(env)) {
         return {

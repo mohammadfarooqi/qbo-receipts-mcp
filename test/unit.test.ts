@@ -712,3 +712,89 @@ describe("upload-receipt — validation", () => {
         }, {}));
     });
 });
+
+describe("upload-receipt — hardening (SEC-1, SEC-2)", () => {
+    it("rejects allowlist prefix without trailing slash that would allow sibling dirs (SEC-2)", () => {
+        // Prefix "/Users/me/receipts" should NOT allow "/Users/me/receipts-leak/foo.pdf"
+        assert.throws(() => validateUploadReceiptInput({
+            filePath: "/Users/me/receipts-leak/foo.pdf",
+            contentType: "application/pdf",
+            entityType: "Purchase",
+            entityId: "42"
+        }, { allowedPrefixes: ["/Users/me/receipts"] }), /outside allowed/);
+    });
+
+    it("still allows legitimate files under the (now properly bounded) prefix", () => {
+        assert.doesNotThrow(() => validateUploadReceiptInput({
+            filePath: "/Users/me/receipts/aws.pdf",
+            contentType: "application/pdf",
+            entityType: "Purchase",
+            entityId: "42"
+        }, { allowedPrefixes: ["/Users/me/receipts"] }));
+    });
+
+    it("allows a file reached via a symlink that resolves inside the allowlist", async () => {
+        const { mkdtempSync, writeFileSync, symlinkSync, rmSync, realpathSync } = await import("node:fs");
+        const { tmpdir } = await import("node:os");
+        const { join } = await import("node:path");
+        const dir = realpathSync(mkdtempSync(join(tmpdir(), "qbo-mcp-sym-ok-")));
+        const real = join(dir, "real.pdf");
+        const link = join(dir, "link.pdf");
+        writeFileSync(real, Buffer.from("%PDF-1.4\n"));
+        symlinkSync(real, link);
+        try {
+            // Should not throw — the realpath of link.pdf is real.pdf which is under `dir`.
+            const { uploadReceipt } = await import("../src/tools/upload-receipt.js");
+            const fakeClient = {
+                getRealmId: () => "REALM",
+                uploadAttachable: async () => ({ Id: "ATT1", FileName: "real.pdf" })
+            };
+            const result = await uploadReceipt(
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                fakeClient as any,
+                {
+                    filePath: link,
+                    contentType: "application/pdf",
+                    entityType: "Purchase",
+                    entityId: "42"
+                },
+                { QBO_ATTACH_ALLOWED_DIRS: dir }
+            );
+            assert.ok(result);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it("rejects a symlink whose target escapes the allowlist (SEC-1)", async () => {
+        const { mkdtempSync, writeFileSync, symlinkSync, rmSync, realpathSync } = await import("node:fs");
+        const { tmpdir } = await import("node:os");
+        const { join } = await import("node:path");
+        const allowed = realpathSync(mkdtempSync(join(tmpdir(), "qbo-mcp-sym-in-")));
+        const outside = realpathSync(mkdtempSync(join(tmpdir(), "qbo-mcp-sym-out-")));
+        const outsideFile = join(outside, "secret.pdf");
+        const link = join(allowed, "link.pdf");
+        writeFileSync(outsideFile, Buffer.from("%PDF-1.4\nfake-secret\n"));
+        symlinkSync(outsideFile, link);
+        try {
+            const { uploadReceipt } = await import("../src/tools/upload-receipt.js");
+            const fakeClient = {
+                getRealmId: () => "REALM",
+                uploadAttachable: async () => ({ Id: "ATT1", FileName: "link.pdf" })
+            };
+            await assert.rejects(
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                uploadReceipt(fakeClient as any, {
+                    filePath: link,
+                    contentType: "application/pdf",
+                    entityType: "Purchase",
+                    entityId: "42"
+                }, { QBO_ATTACH_ALLOWED_DIRS: allowed }),
+                /outside allowed|escapes|canonical/i
+            );
+        } finally {
+            rmSync(allowed, { recursive: true, force: true });
+            rmSync(outside, { recursive: true, force: true });
+        }
+    });
+});
