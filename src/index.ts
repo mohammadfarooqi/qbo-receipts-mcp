@@ -14,7 +14,8 @@ import {
     getVendorInputSchema, getVendor,
     createVendorInputSchema, createVendor,
     updateVendorInputSchema, updateVendor,
-    queryInputSchema, query as runQuery
+    queryInputSchema, query as runQuery,
+    getBocRateInputSchema, getBocRate
 } from "./tools/index.js";
 
 const require = createRequire(import.meta.url);
@@ -146,6 +147,16 @@ server.registerTool("query", {
 }, async (args) => {
     try {
         const result = await withClient(c => runQuery(c, args));
+        return textResult(result);
+    } catch (e) { return errorResult(e); }
+});
+
+server.registerTool("get_boc_rate", {
+    description: "Fetch historical USD/CAD exchange rate from the Bank of Canada Valet API for a given date. The value is CAD per 1 USD, matching QBO's ExchangeRate convention. Handles weekends/holidays by returning the latest observation within a 7-day lookback window. CRA-accepted source per Income Tax Folio S5-F4-C1. No authentication required. Override base URL via BOC_BASE_URL env var (for testing).",
+    inputSchema: getBocRateInputSchema.shape
+}, async (args) => {
+    try {
+        const result = await getBocRate(args);
         return textResult(result);
     } catch (e) { return errorResult(e); }
 });
