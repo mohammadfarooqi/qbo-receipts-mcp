@@ -11,7 +11,7 @@ export const createPurchaseInputSchema = z.object({
     totalAmt: z.number().positive().describe("Total amount in the transaction currency (tax-inclusive for Quick Method)"),
     expenseAccountId: z.string().describe("QBO Account Id for the expense line (e.g. Subscriptions, Meals)"),
     vendorId: z.string().optional().describe("QBO Vendor Id for EntityRef"),
-    currencyCode: z.string().regex(/^[A-Z]{3}$/).optional().describe("ISO 4217 currency code if different from home currency"),
+    currencyCode: z.string().regex(/^[A-Z]{3}$/).optional().describe("ISO 4217 currency code. OMIT for home-currency transactions — QBO infers from the payment account. Only set when the transaction is in a DIFFERENT currency than the home currency; in that case exchangeRate is required."),
     exchangeRate: z.number().positive().optional().describe("Exchange rate (home currency per 1 foreign unit). REQUIRED if currencyCode differs from home currency."),
     description: z.string().optional().describe("Optional line description"),
     source: z.enum(["gmail", "pp", "manual"]).describe("Source of the transaction (for memo marker)"),
@@ -27,7 +27,12 @@ export type CreatePurchaseInput = z.infer<typeof createPurchaseInputSchema>;
 export function buildPurchasePayload(input: CreatePurchaseInput): Record<string, unknown> {
     validateSessionTag(input.sessionTag);
     if (input.currencyCode && input.exchangeRate === undefined) {
-        throw new Error(`ExchangeRate is required when currencyCode is set (got currencyCode=${input.currencyCode})`);
+        throw new Error(
+            `ExchangeRate is required when currencyCode is set. For a home-currency transaction, ` +
+            `omit currencyCode entirely (QBO will infer from the payment account). ` +
+            `For a foreign currency, provide the historical exchange rate (use get_boc_rate for CAD/USD). ` +
+            `Got currencyCode=${input.currencyCode}.`
+        );
     }
 
     const privateNote = formatMemoMarker({
