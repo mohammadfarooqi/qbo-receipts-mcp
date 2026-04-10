@@ -235,3 +235,57 @@ describe("client — rate limiter", () => {
         assert.ok(timestamps[2] - timestamps[1] >= 45, `gap 2 too small: ${timestamps[2] - timestamps[1]}`);
     });
 });
+
+describe("client — fetchJson with 401 auto-refresh", () => {
+    it("refreshes access token on 401 and retries once", async () => {
+        let callCount = 0;
+        let tokenCallCount = 0;
+        const apiServer = createHttpServer2((req, res) => {
+            if (req.url === "/oauth2/v1/tokens/bearer") {
+                tokenCallCount++;
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({
+                    access_token: "new-access",
+                    refresh_token: "new-refresh",
+                    expires_in: 3600,
+                    x_refresh_token_expires_in: 8726400,
+                    token_type: "bearer"
+                }));
+                return;
+            }
+            callCount++;
+            const auth = req.headers.authorization || "";
+            if (auth === "Bearer old-access") {
+                res.writeHead(401);
+                res.end(JSON.stringify({ error: "unauthorized" }));
+                return;
+            }
+            if (auth === "Bearer new-access") {
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ ok: true, calls: callCount }));
+                return;
+            }
+            res.writeHead(500);
+            res.end();
+        });
+        await new Promise<void>(r => apiServer.listen(0, r));
+        const port = (apiServer.address() as { port: number }).port;
+
+        try {
+            const client = new QboClient({
+                clientId: "c", clientSecret: "s",
+                accessToken: "old-access", refreshToken: "r",
+                realmId: "R",
+                tokenUrl: `http://localhost:${port}/oauth2/v1/tokens/bearer`,
+                baseUrl: `http://localhost:${port}`,
+                minIntervalMs: 0
+            });
+            const result = await client.fetchJson("/v3/company/R/companyinfo/R") as { ok: boolean };
+            assert.equal(result.ok, true);
+            assert.equal(tokenCallCount, 1, "should refresh exactly once");
+            assert.equal(client.getAccessToken(), "new-access");
+        } finally {
+            await new Promise<void>(r => apiServer.close(() => r()));
+        }
+    });
+});

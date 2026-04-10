@@ -77,4 +77,29 @@ export class QboClient {
         this.queue = result.catch(() => undefined);
         return result;
     }
+
+    async fetchJson(path: string, init: RequestInit = {}): Promise<unknown> {
+        return this.enqueue(async () => {
+            const url = `${this.baseUrl}${path}`;
+            const doFetch = async (): Promise<Response> => {
+                const headers = new Headers(init.headers);
+                headers.set("Authorization", `Bearer ${this.accessToken}`);
+                headers.set("Accept", "application/json");
+                if (init.body && !headers.has("Content-Type")) {
+                    headers.set("Content-Type", "application/json");
+                }
+                return fetch(url, { ...init, headers });
+            };
+            let res = await doFetch();
+            if (res.status === 401) {
+                await this.refreshAccessToken();
+                res = await doFetch();
+            }
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`QBO API ${res.status}: ${text}`);
+            }
+            return res.json();
+        });
+    }
 }
