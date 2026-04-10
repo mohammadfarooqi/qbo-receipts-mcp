@@ -102,4 +102,62 @@ export class QboClient {
             return res.json();
         });
     }
+
+    async uploadAttachable(opts: {
+        fileName: string;
+        contentType: string;
+        fileBytes: Buffer;
+        entityType: string;
+        entityId: string;
+    }): Promise<{ Id: string; FileName: string }> {
+        return this.enqueue(async () => {
+            const boundary = `----qbo-mcp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+            const metadata = JSON.stringify({
+                AttachableRef: [{
+                    EntityRef: {
+                        type: opts.entityType,
+                        value: opts.entityId
+                    }
+                }],
+                FileName: opts.fileName,
+                ContentType: opts.contentType
+            }, null, 2);
+
+            const CRLF = "\r\n";
+            const parts: Buffer[] = [];
+            parts.push(Buffer.from(`--${boundary}${CRLF}`));
+            parts.push(Buffer.from(`Content-Disposition: form-data; name="file_metadata_01"${CRLF}`));
+            parts.push(Buffer.from(`Content-Type: application/json${CRLF}${CRLF}`));
+            parts.push(Buffer.from(metadata));
+            parts.push(Buffer.from(`${CRLF}--${boundary}${CRLF}`));
+            parts.push(Buffer.from(`Content-Disposition: form-data; name="file_content_01"; filename="${opts.fileName}"${CRLF}`));
+            parts.push(Buffer.from(`Content-Type: ${opts.contentType}${CRLF}${CRLF}`));
+            parts.push(opts.fileBytes);
+            parts.push(Buffer.from(`${CRLF}--${boundary}--${CRLF}`));
+
+            const body = Buffer.concat(parts);
+            const url = `${this.baseUrl}/v3/company/${this.realmId}/upload`;
+            const headers: Record<string, string> = {
+                "Authorization": `Bearer ${this.accessToken}`,
+                "Accept": "application/json",
+                "Content-Type": `multipart/form-data; boundary=${boundary}`
+            };
+
+            let res = await fetch(url, { method: "POST", headers, body });
+            if (res.status === 401) {
+                await this.refreshAccessToken();
+                headers["Authorization"] = `Bearer ${this.accessToken}`;
+                res = await fetch(url, { method: "POST", headers, body });
+            }
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`Attachable upload failed: ${res.status} ${text}`);
+            }
+            const json = await res.json() as {
+                AttachableResponse: Array<{ Attachable: { Id: string; FileName: string } }>;
+            };
+            return json.AttachableResponse[0].Attachable;
+        });
+    }
 }

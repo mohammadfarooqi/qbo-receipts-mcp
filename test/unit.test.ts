@@ -289,3 +289,57 @@ describe("client — fetchJson with 401 auto-refresh", () => {
         }
     });
 });
+
+describe("client — uploadAttachable", () => {
+    it("POSTs multipart body with file_metadata_01 and file_content_01 parts", async () => {
+        let capturedContentType = "";
+        let capturedBody = Buffer.alloc(0);
+        const apiServer = createHttpServer2((req, res) => {
+            capturedContentType = req.headers["content-type"] || "";
+            const chunks: Buffer[] = [];
+            req.on("data", c => chunks.push(c));
+            req.on("end", () => {
+                capturedBody = Buffer.concat(chunks);
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({
+                    AttachableResponse: [{
+                        Attachable: { Id: "ATT1", FileName: "receipt.pdf" }
+                    }],
+                    time: "2026-04-10T00:00:00Z"
+                }));
+            });
+        });
+        await new Promise<void>(r => apiServer.listen(0, r));
+        const port = (apiServer.address() as { port: number }).port;
+
+        try {
+            const client = new QboClient({
+                clientId: "c", clientSecret: "s",
+                accessToken: "a", refreshToken: "r",
+                realmId: "R",
+                tokenUrl: "http://unused",
+                baseUrl: `http://localhost:${port}`,
+                minIntervalMs: 0
+            });
+            const pdfBytes = Buffer.from("%PDF-1.4\n%fake\n");
+            const result = await client.uploadAttachable({
+                fileName: "receipt.pdf",
+                contentType: "application/pdf",
+                fileBytes: pdfBytes,
+                entityType: "Purchase",
+                entityId: "42"
+            });
+            assert.ok(result.Id, "should return Attachable Id");
+
+            assert.match(capturedContentType, /^multipart\/form-data; boundary=/);
+            const bodyText = capturedBody.toString("binary");
+            assert.match(bodyText, /Content-Disposition: form-data; name="file_metadata_01"/);
+            assert.match(bodyText, /Content-Disposition: form-data; name="file_content_01"; filename="receipt.pdf"/);
+            assert.match(bodyText, /"type": "Purchase"/);
+            assert.match(bodyText, /"value": "42"/);
+            assert.match(bodyText, /%PDF-1\.4/);
+        } finally {
+            await new Promise<void>(r => apiServer.close(() => r()));
+        }
+    });
+});
