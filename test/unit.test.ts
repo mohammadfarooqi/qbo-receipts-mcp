@@ -1098,3 +1098,34 @@ describe("search-vendors — buildVendorsQuery", () => {
         assert.equal(q, "SELECT * FROM Vendor WHERE DisplayName LIKE 'Stripe%' AND CurrencyRef = 'USD' AND Active = true ORDER BY DisplayName MAXRESULTS 100");
     });
 });
+
+import { getVendor, getVendorInputSchema } from "../src/tools/get-vendor.js";
+
+describe("get-vendor — input validation", () => {
+    it("requires a non-empty id", () => {
+        assert.throws(() => getVendorInputSchema.parse({ id: "" }));
+    });
+
+    it("accepts a valid id", () => {
+        assert.equal(getVendorInputSchema.parse({ id: "77" }).id, "77");
+    });
+});
+
+describe("get-vendor — fetches from /vendor/:id", () => {
+    it("calls the correct path and parses the response", async () => {
+        let capturedPath = "";
+        const fake = {
+            getRealmId: () => "REALM",
+            fetchJson: async (path: string) => {
+                capturedPath = path;
+                return {
+                    Vendor: { Id: "77", SyncToken: "0", DisplayName: "Acme", Active: true },
+                    time: "2026-04-10T00:00:00Z"
+                };
+            }
+        } as unknown as import("../src/client.js").QboClient;
+        const result = await getVendor(fake, { id: "77" }) as { Vendor: { Id: string } };
+        assert.equal(capturedPath, "/v3/company/REALM/vendor/77");
+        assert.equal(result.Vendor.Id, "77");
+    });
+});
