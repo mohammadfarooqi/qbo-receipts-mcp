@@ -31,6 +31,16 @@ Fixed in Task 25 hardening commit. `validateUploadReceiptInput` now normalizes e
 
 ## v0.2.0 — Resolved
 
+### [SEC-6] `sourceId`/`existingNote` unescaped in memo marker — FIXED 2026-04-10 (v0.2.1)
+**Source:** Opus review of Task 23 (2026-04-10); promoted from low to high after v0.2.0 shipped `rollback_session`
+**Details:** In `formatMemoMarker`, `sourceId` and `existingNote` flowed into `PrivateNote` without escaping. If `sourceId` contained `| sess:fake-tag`, a rollback query matching `sess:<tag>` could match unintended records. v0.2.0's `rollback_session` tool turned this from a cosmetic issue into a cross-tool exploit path.
+**Fix:** `createPurchaseInputSchema` now validates `sourceId` against `/^[A-Za-z0-9._:\-@]+$/` (max 200 chars) and rejects the substring `sess:`. `formatMemoMarker` rejects `existingNote` values containing `|`, CR, LF, or NUL.
+
+### [SAFETY-1] rollback_session unbounded date window — FIXED 2026-04-10 (v0.2.1)
+**Source:** Opus cross-cutting code review of v0.2.0 (2026-04-10)
+**Details:** `rollback_session` accepted arbitrary `txnDateAfter`/`txnDateBefore` with only format-regex validation, turning the default 60-day window into an optional mass-delete primitive spanning the entire purchase history.
+**Fix:** Added `.superRefine()` on `rollbackSessionInputSchema` that rejects ranges > 365 days and inverted ranges (`txnDateAfter > txnDateBefore`). Reasonable upper bound for catch-up workflows; rejects abuse.
+
 ### [SEC-3] TOCTOU between `statSync` and `readFileSync` — FIXED 2026-04-10
 Fixed in Task 21 of the v0.2.0 plan. `uploadReceipt` was refactored to open the canonical path once with `openSync`, use `fstatSync(fd)` for the size check, allocate a pre-sized buffer via `Buffer.alloc`, and read via `readSync` in a loop from the same descriptor. `closeSync(fd)` runs in a `finally` block. No TOCTOU window between stat and read — both operate on the same inode via the fd. Post-open path swaps do not affect the read.
 
@@ -53,12 +63,6 @@ Fixed in Tasks 20 + 21 of the v0.2.0 plan. New helper `src/util/mime-sniff.ts` e
 **Severity:** Low
 **Details:** `UNSAFE_FILENAME_CHARS` only catches ASCII control characters + quotes. Filenames with right-to-left override (`\u202E`), bidirectional controls (`\u202A`-`\u2069`), or zero-width chars (`\u200D`, `\uFEFF`) pass validation and could display misleadingly in QBO.
 **Fix:** Add Unicode category denylist or restrict to printable ASCII (depending on UX requirements).
-
-### [SEC-6] `sourceId`/`existingNote` unescaped in memo marker
-**Source:** Opus review of Task 23 (2026-04-10)
-**Severity:** Low
-**Details:** In `formatMemoMarker`, `sourceId` and `existingNote` flow into `PrivateNote` without escaping. If `sourceId` contained `| sess:fake-tag`, a rollback query matching `sess:<tag>` could match unintended records.
-**Fix:** Validate `sourceId` against `/^[A-Za-z0-9._:-]+$/` and reject `|` / newlines in `existingNote` within `formatMemoMarker`.
 
 ### [BUG-1] `exchangeRate: 0` bypasses `buildPurchasePayload` guard
 **Source:** Opus review of Task 23 (2026-04-10)
@@ -117,7 +121,7 @@ Automated npm publish on GitHub release.
 
 ### [PRODUCT-9] Memory-efficient upload for large files
 **Severity:** N/A — enhancement
-**Details:** `readFileSync` loads entire file into memory (up to 20 MB). Fine at current limit; revisit if limit ever grows.
+**Details:** `readSync` into `Buffer.alloc(fileSize)` loads entire file into memory (up to 20 MB). Fine at current limit; revisit if limit ever grows.
 
 ---
 
