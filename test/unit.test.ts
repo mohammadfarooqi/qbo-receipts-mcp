@@ -854,3 +854,70 @@ describe("upload-receipt — hardening (SEC-1, SEC-2)", () => {
         }
     });
 });
+
+import { AccountSchema, AccountQueryResponseSchema } from "../src/schema.js";
+
+describe("schema — AccountSchema", () => {
+    it("accepts a minimal Account", () => {
+        const parsed = AccountSchema.parse({
+            Id: "42",
+            SyncToken: "0",
+            Name: "Chequing",
+            AccountType: "Bank",
+            Active: true
+        });
+        assert.equal(parsed.Id, "42");
+        assert.equal(parsed.AccountType, "Bank");
+    });
+
+    it("accepts an Account with currency and sub-account", () => {
+        const parsed = AccountSchema.parse({
+            Id: "1102",
+            SyncToken: "3",
+            Name: "USD Credit Card",
+            AccountType: "Credit Card",
+            AccountSubType: "CreditCard",
+            Active: true,
+            CurrencyRef: { value: "USD", name: "United States Dollar" },
+            CurrentBalance: -1234.56,
+            Classification: "Liability"
+        });
+        assert.equal(parsed.CurrencyRef?.value, "USD");
+    });
+
+    it("passes through unknown fields without failing", () => {
+        const parsed = AccountSchema.parse({
+            Id: "9",
+            SyncToken: "0",
+            Name: "X",
+            AccountType: "Expense",
+            Active: true,
+            FullyQualifiedName: "Operating Expenses:X",
+            SomeNewFutureField: "ok"
+        });
+        assert.equal(parsed.Id, "9");
+    });
+});
+
+describe("schema — AccountQueryResponseSchema", () => {
+    it("accepts a wrapped query response", () => {
+        const parsed = AccountQueryResponseSchema.parse({
+            QueryResponse: {
+                Account: [
+                    { Id: "1", SyncToken: "0", Name: "A", AccountType: "Bank", Active: true }
+                ],
+                startPosition: 1,
+                maxResults: 1
+            },
+            time: "2026-04-10T00:00:00Z"
+        });
+        assert.equal(parsed.QueryResponse.Account?.length, 1);
+    });
+
+    it("accepts an empty QueryResponse (no Account key)", () => {
+        const parsed = AccountQueryResponseSchema.parse({
+            QueryResponse: { startPosition: 1, maxResults: 0 }
+        });
+        assert.equal(parsed.QueryResponse.Account, undefined);
+    });
+});

@@ -119,3 +119,34 @@ export const AttachableSchema = z.object({
     })).optional()
 });
 export type Attachable = z.infer<typeof AttachableSchema>;
+
+export const AccountSchema = z.object({
+    Id: z.string(),
+    SyncToken: z.string(),
+    Name: z.string(),
+    AccountType: z.string(),
+    AccountSubType: z.string().optional(),
+    Active: z.boolean(),
+    Classification: z.string().optional(),
+    CurrencyRef: RefSchema.optional(),
+    CurrentBalance: z.number().optional(),
+    CurrentBalanceWithSubAccounts: z.number().optional(),
+    FullyQualifiedName: z.string().optional(),
+    SubAccount: z.boolean().optional(),
+    ParentRef: RefSchema.optional(),
+    Description: z.string().optional(),
+    AcctNum: z.string().optional(),
+    MetaData: MetaDataSchema
+}).passthrough();
+export type Account = z.infer<typeof AccountSchema>;
+
+export const AccountQueryResponseSchema = z.object({
+    QueryResponse: z.object({
+        Account: z.array(AccountSchema).optional(),
+        startPosition: z.number().optional(),
+        maxResults: z.number().optional(),
+        totalCount: z.number().optional()
+    }),
+    time: z.string().optional()
+});
+export type AccountQueryResponse = z.infer<typeof AccountQueryResponseSchema>;
