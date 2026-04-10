@@ -72,3 +72,55 @@ describe("oauth-cli — exchangeCodeForTokens", () => {
         }
     });
 });
+
+import { writeTokensToEnv } from "../src/oauth-cli.js";
+import { readFileSync as readFileSync2, writeFileSync as writeFileSync2, unlinkSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+describe("oauth-cli — writeTokensToEnv", () => {
+    it("appends tokens to a new .env file", () => {
+        const dir = mkdtempSync(join(tmpdir(), "qbo-mcp-test-"));
+        const envPath = join(dir, ".env");
+        try {
+            writeTokensToEnv(envPath, {
+                access_token: "aaa",
+                refresh_token: "rrr",
+                expires_in: 3600,
+                x_refresh_token_expires_in: 8726400,
+                token_type: "bearer"
+            }, "123456789");
+
+            const content = readFileSync2(envPath, "utf8");
+            assert.match(content, /QBO_ACCESS_TOKEN=aaa/);
+            assert.match(content, /QBO_REFRESH_TOKEN=rrr/);
+            assert.match(content, /QBO_REALM_ID=123456789/);
+        } finally {
+            unlinkSync(envPath);
+        }
+    });
+
+    it("replaces existing QBO_ lines without touching other lines", () => {
+        const dir = mkdtempSync(join(tmpdir(), "qbo-mcp-test-"));
+        const envPath = join(dir, ".env");
+        try {
+            writeFileSync2(envPath, "OTHER_VAR=keepme\nQBO_ACCESS_TOKEN=old\nQBO_REFRESH_TOKEN=oldr\nQBO_REALM_ID=old\n");
+            writeTokensToEnv(envPath, {
+                access_token: "new-access",
+                refresh_token: "new-refresh",
+                expires_in: 3600,
+                x_refresh_token_expires_in: 8726400,
+                token_type: "bearer"
+            }, "new-realm");
+
+            const content = readFileSync2(envPath, "utf8");
+            assert.match(content, /OTHER_VAR=keepme/);
+            assert.match(content, /QBO_ACCESS_TOKEN=new-access/);
+            assert.match(content, /QBO_REFRESH_TOKEN=new-refresh/);
+            assert.match(content, /QBO_REALM_ID=new-realm/);
+            assert.doesNotMatch(content, /QBO_ACCESS_TOKEN=old/);
+        } finally {
+            unlinkSync(envPath);
+        }
+    });
+});
