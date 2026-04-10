@@ -521,3 +521,32 @@ describe("schema — PurchaseQueryResponseSchema", () => {
         assert.equal(result.QueryResponse.Purchase, undefined);
     });
 });
+
+import { buildPurchaseQuery } from "../src/tools/search-purchases.js";
+
+describe("search-purchases — buildPurchaseQuery", () => {
+    it("builds a base SELECT with no filters", () => {
+        const q = buildPurchaseQuery({});
+        assert.equal(q, "SELECT * FROM Purchase ORDER BY TxnDate DESC MAXRESULTS 100");
+    });
+    it("adds date range filters", () => {
+        const q = buildPurchaseQuery({ txnDateAfter: "2025-01-01", txnDateBefore: "2025-12-31" });
+        assert.match(q, /TxnDate >= '2025-01-01'/);
+        assert.match(q, /TxnDate <= '2025-12-31'/);
+    });
+    it("adds exact amount filter", () => {
+        const q = buildPurchaseQuery({ totalAmt: 42.00 });
+        assert.match(q, /TotalAmt = '42\.00'/);
+    });
+    it("adds currency filter", () => {
+        const q = buildPurchaseQuery({ currencyCode: "USD" });
+        assert.match(q, /CurrencyRef = 'USD'/);
+    });
+    it("respects max results", () => {
+        const q = buildPurchaseQuery({ maxResults: 50 });
+        assert.match(q, /MAXRESULTS 50$/);
+    });
+    it("rejects SQL-injection-looking input in currency code", () => {
+        assert.throws(() => buildPurchaseQuery({ currencyCode: "USD' OR 1=1--" }), /Invalid/);
+    });
+});
