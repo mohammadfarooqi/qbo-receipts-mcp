@@ -950,11 +950,13 @@ describe("schema — VendorSchema", () => {
                 City: "San Francisco",
                 CountrySubDivisionCode: "CA",
                 PostalCode: "94103",
-                Country: "US"
+                Country: "US",
+                UnknownAddrField: "x"
             }
         });
         assert.equal(parsed.CurrencyRef?.value, "USD");
         assert.equal(parsed.BillAddr?.City, "San Francisco");
+        assert.equal((parsed.BillAddr as Record<string, unknown>)["UnknownAddrField"], "x");
     });
 
     it("passes through unknown fields", () => {
