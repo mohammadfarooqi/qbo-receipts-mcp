@@ -62,4 +62,19 @@ export class QboClient {
         this.accessToken = parsed.access_token;
         this.refreshToken = parsed.refresh_token;
     }
+
+    async enqueue<T>(fn: () => Promise<T>): Promise<T> {
+        const run = async (): Promise<T> => {
+            const now = Date.now();
+            const elapsed = now - this.lastRequestAt;
+            if (elapsed < this.minIntervalMs) {
+                await new Promise(r => setTimeout(r, this.minIntervalMs - elapsed));
+            }
+            this.lastRequestAt = Date.now();
+            return fn();
+        };
+        const result = this.queue.then(run, run) as Promise<T>;
+        this.queue = result.catch(() => undefined);
+        return result;
+    }
 }

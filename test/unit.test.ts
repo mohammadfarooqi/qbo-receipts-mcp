@@ -210,3 +210,28 @@ describe("client — refreshAccessToken", () => {
         }
     });
 });
+
+describe("client — rate limiter", () => {
+    it("serializes requests with minimum interval", async () => {
+        const client = new QboClient({
+            clientId: "c", clientSecret: "s",
+            accessToken: "a", refreshToken: "r",
+            realmId: "R", tokenUrl: "http://unused",
+            baseUrl: "http://unused",
+            minIntervalMs: 50
+        });
+
+        const timestamps: number[] = [];
+        const runs = [0, 1, 2].map(async () => {
+            await client.enqueue(async () => {
+                timestamps.push(Date.now());
+                return null;
+            });
+        });
+        await Promise.all(runs);
+
+        assert.equal(timestamps.length, 3);
+        assert.ok(timestamps[1] - timestamps[0] >= 45, `gap 1 too small: ${timestamps[1] - timestamps[0]}`);
+        assert.ok(timestamps[2] - timestamps[1] >= 45, `gap 2 too small: ${timestamps[2] - timestamps[1]}`);
+    });
+});
