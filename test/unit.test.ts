@@ -424,3 +424,23 @@ describe("session — formatMemoMarker", () => {
         );
     });
 });
+
+import { isDryRun } from "../src/util/dry-run.js";
+
+describe("dry-run", () => {
+    it("returns true for QBO_DRY_RUN=true", () => {
+        assert.equal(isDryRun({ QBO_DRY_RUN: "true" }), true);
+    });
+    it("returns true for QBO_DRY_RUN=TRUE (case-insensitive)", () => {
+        assert.equal(isDryRun({ QBO_DRY_RUN: "TRUE" }), true);
+    });
+    it("returns true for QBO_DRY_RUN=1", () => {
+        assert.equal(isDryRun({ QBO_DRY_RUN: "1" }), true);
+    });
+    it("returns false when unset", () => {
+        assert.equal(isDryRun({}), false);
+    });
+    it("returns false for QBO_DRY_RUN=false", () => {
+        assert.equal(isDryRun({ QBO_DRY_RUN: "false" }), false);
+    });
+});
