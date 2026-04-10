@@ -16,6 +16,11 @@ export interface MemoMarkerOptions {
 
 export function formatMemoMarker(opts: MemoMarkerOptions): string {
     validateSessionTag(opts.sessionTag);
+    if (opts.existingNote !== undefined) {
+        if (/[|\r\n\0]/.test(opts.existingNote)) {
+            throw new Error("existingNote must not contain pipe, newline, or null characters (memo marker injection prevention)");
+        }
+    }
     const marker = `auto:${opts.source}:${opts.sourceId} | sess:${opts.sessionTag}`;
     if (opts.existingNote && opts.existingNote.trim().length > 0) {
         return `${opts.existingNote.trim()} | ${marker}`;

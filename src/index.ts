@@ -16,7 +16,7 @@ import {
     updateVendorInputSchema, updateVendor,
     queryInputSchema, query as runQuery,
     getBocRateInputSchema, getBocRate,
-    rollbackSessionInputSchema, rollbackSession
+    rollbackSessionInputSchema, rollbackSessionBaseSchema, rollbackSession
 } from "./tools/index.js";
 
 const require = createRequire(import.meta.url);
@@ -164,7 +164,7 @@ server.registerTool("get_boc_rate", {
 
 server.registerTool("rollback_session", {
     description: "Find all Purchases whose PrivateNote contains sess:<sessionTag> within a date window and soft-delete them. Used as the rollback primitive for a write batch gone wrong. Defaults to a 60-day date window ending tomorrow (override with txnDateAfter/txnDateBefore for older sessions). Honors QBO_DRY_RUN — in dry-run, returns the matched Ids without deleting.",
-    inputSchema: rollbackSessionInputSchema.shape
+    inputSchema: rollbackSessionBaseSchema.shape
 }, async (args) => {
     try {
         const result = await withClient(c => rollbackSession(c, args));

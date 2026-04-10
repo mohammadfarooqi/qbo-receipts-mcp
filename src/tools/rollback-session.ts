@@ -9,10 +9,31 @@ const DEFAULT_WINDOW_DAYS = 60;
 
 const SESSION_TAG_REGEX = /^\d{4}-\d{2}-\d{2}-\d{4}$/;
 
-export const rollbackSessionInputSchema = z.object({
+export const rollbackSessionBaseSchema = z.object({
     sessionTag: z.string().regex(SESSION_TAG_REGEX, "Session tag must be in YYYY-MM-DD-HHmm format").describe("Session tag in YYYY-MM-DD-HHmm format — identifies the write batch to roll back"),
     txnDateAfter: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Lower bound on transaction date (defaults to today − 60 days)"),
     txnDateBefore: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Upper bound on transaction date (defaults to tomorrow)")
+});
+
+export const rollbackSessionInputSchema = rollbackSessionBaseSchema.superRefine((val, ctx) => {
+    if (val.txnDateAfter && val.txnDateBefore) {
+        if (val.txnDateAfter > val.txnDateBefore) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "txnDateAfter must be on or before txnDateBefore"
+            });
+            return;
+        }
+        const after = new Date(val.txnDateAfter + "T00:00:00Z").getTime();
+        const before = new Date(val.txnDateBefore + "T00:00:00Z").getTime();
+        const spanDays = (before - after) / 86400000;
+        if (spanDays > 365) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: `txnDate range is ${Math.round(spanDays)} days — maximum allowed is 365 days (safety bound on the mass-delete primitive)`
+            });
+        }
+    }
 });
 export type RollbackSessionInput = z.infer<typeof rollbackSessionInputSchema>;
 

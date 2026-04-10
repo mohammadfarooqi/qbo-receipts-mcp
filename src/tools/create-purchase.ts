@@ -15,7 +15,10 @@ export const createPurchaseInputSchema = z.object({
     exchangeRate: z.number().positive().optional().describe("Exchange rate (home currency per 1 foreign unit). REQUIRED if currencyCode differs from home currency."),
     description: z.string().optional().describe("Optional line description"),
     source: z.enum(["gmail", "pp", "manual"]).describe("Source of the transaction (for memo marker)"),
-    sourceId: z.string().min(1).describe("Source identifier (gmail message id, paypal transaction id, or manual description)"),
+    sourceId: z.string().min(1).max(200)
+        .regex(/^[A-Za-z0-9._:\-@]+$/, "sourceId must contain only letters, digits, and .-_:@")
+        .refine((s) => !s.toLowerCase().includes("sess:"), "sourceId must not contain 'sess:' (reserved for session markers)")
+        .describe("Source identifier. Allowed characters: A-Z a-z 0-9 . _ - : @. Must not contain 'sess:' (reserved)."),
     sessionTag: z.string().describe("Session tag in YYYY-MM-DD-HHmm format for rollback grouping"),
     existingNote: z.string().optional().describe("Optional existing note text (memo marker will be appended)")
 });

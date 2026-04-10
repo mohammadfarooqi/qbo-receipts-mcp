@@ -1722,3 +1722,132 @@ describe("upload-receipt — SEC-4 MIME sniffing", () => {
         }
     });
 });
+
+import { formatMemoMarker as formatMemoMarkerSec6 } from "../src/session.js";
+import { createPurchaseInputSchema as createPurchaseInputSchemaSec6 } from "../src/tools/create-purchase.js";
+
+describe("SEC-6 — sourceId + existingNote memo marker injection", () => {
+    it("createPurchaseInputSchema rejects sourceId containing pipe", () => {
+        assert.throws(() => createPurchaseInputSchemaSec6.parse({
+            txnDate: "2026-04-10",
+            paymentType: "CreditCard",
+            paymentAccountId: "1101",
+            totalAmt: 10,
+            expenseAccountId: "80",
+            source: "manual",
+            sourceId: "abc | sess:FAKE-TAG",
+            sessionTag: "2026-04-10-0930"
+        }));
+    });
+
+    it("createPurchaseInputSchema rejects sourceId containing sess:", () => {
+        assert.throws(() => createPurchaseInputSchemaSec6.parse({
+            txnDate: "2026-04-10",
+            paymentType: "CreditCard",
+            paymentAccountId: "1101",
+            totalAmt: 10,
+            expenseAccountId: "80",
+            source: "manual",
+            sourceId: "sess:FAKE",
+            sessionTag: "2026-04-10-0930"
+        }));
+    });
+
+    it("createPurchaseInputSchema rejects sourceId containing newline", () => {
+        assert.throws(() => createPurchaseInputSchemaSec6.parse({
+            txnDate: "2026-04-10",
+            paymentType: "CreditCard",
+            paymentAccountId: "1101",
+            totalAmt: 10,
+            expenseAccountId: "80",
+            source: "manual",
+            sourceId: "line1\nline2",
+            sessionTag: "2026-04-10-0930"
+        }));
+    });
+
+    it("createPurchaseInputSchema accepts common legitimate sourceId formats", () => {
+        // Gmail message IDs, paypal transaction IDs, manual descriptions
+        for (const id of [
+            "19123abc456",                          // gmail-like
+            "4AB12345CD678901E",                    // paypal txn id
+            "manual-2024-receipt-042",              // manual with hyphens
+            "receipt_2024_04_15.pdf",               // filename-ish
+            "order.12345@vendor.com"                // dotted with @
+        ]) {
+            const parsed = createPurchaseInputSchemaSec6.parse({
+                txnDate: "2026-04-10",
+                paymentType: "CreditCard",
+                paymentAccountId: "1101",
+                totalAmt: 10,
+                expenseAccountId: "80",
+                source: "manual",
+                sourceId: id,
+                sessionTag: "2026-04-10-0930"
+            });
+            assert.equal(parsed.sourceId, id);
+        }
+    });
+
+    it("formatMemoMarker rejects existingNote containing pipe+sess marker", () => {
+        assert.throws(() => formatMemoMarkerSec6({
+            source: "manual",
+            sourceId: "abc",
+            sessionTag: "2026-04-10-0930",
+            existingNote: "old note | sess:FAKE-TAG"
+        }));
+    });
+
+    it("formatMemoMarker rejects existingNote containing newline", () => {
+        assert.throws(() => formatMemoMarkerSec6({
+            source: "manual",
+            sourceId: "abc",
+            sessionTag: "2026-04-10-0930",
+            existingNote: "line1\nline2"
+        }));
+    });
+
+    it("formatMemoMarker accepts a clean existingNote", () => {
+        const result = formatMemoMarkerSec6({
+            source: "manual",
+            sourceId: "abc",
+            sessionTag: "2026-04-10-0930",
+            existingNote: "legitimate prior note"
+        });
+        assert.ok(result.startsWith("legitimate prior note | auto:manual:abc | sess:2026-04-10-0930"));
+    });
+});
+
+import { rollbackSessionInputSchema as rollbackSessionInputSchemaSanity } from "../src/tools/rollback-session.js";
+
+describe("rollback-session — date window sanity bound", () => {
+    it("accepts a date range exactly at the 365-day limit", () => {
+        const parsed = rollbackSessionInputSchemaSanity.parse({
+            sessionTag: "2026-04-10-0930",
+            txnDateAfter: "2025-04-10",
+            txnDateBefore: "2026-04-10"
+        });
+        assert.equal(parsed.txnDateAfter, "2025-04-10");
+    });
+
+    it("rejects a date range wider than 365 days", () => {
+        assert.throws(() => rollbackSessionInputSchemaSanity.parse({
+            sessionTag: "2026-04-10-0930",
+            txnDateAfter: "1900-01-01",
+            txnDateBefore: "2099-12-31"
+        }), /range/i);
+    });
+
+    it("rejects txnDateAfter > txnDateBefore", () => {
+        assert.throws(() => rollbackSessionInputSchemaSanity.parse({
+            sessionTag: "2026-04-10-0930",
+            txnDateAfter: "2026-04-10",
+            txnDateBefore: "2026-04-01"
+        }));
+    });
+
+    it("still accepts the default shape with only sessionTag", () => {
+        const parsed = rollbackSessionInputSchemaSanity.parse({ sessionTag: "2026-04-10-0930" });
+        assert.equal(parsed.sessionTag, "2026-04-10-0930");
+    });
+});
