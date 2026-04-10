@@ -1,0 +1,65 @@
+{
+  "name": "qbo-receipts-mcp",
+  "version": "0.1.0",
+  "mcpName": "io.github.mohammadfarooqi/qbo-receipts",
+  "description": "Local stdio MCP server for creating QuickBooks Online expenses with receipt attachments. Multi-currency aware.",
+  "type": "module",
+  "bin": {
+    "qbo-receipts-mcp": "dist/index.js",
+    "qbo-receipts-mcp-oauth": "dist/oauth-cli.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "oauth": "node dist/oauth-cli.js",
+    "test": "npm run build && node --test dist/test/unit.test.js dist/test/integration.test.js",
+    "test:unit": "npm run build && node --test dist/test/unit.test.js",
+    "release:patch": "npm version patch && git push origin master --tags && gh release create v$(node -p \"require('./package.json').version\") --generate-notes -R mohammadfarooqi/qbo-receipts-mcp",
+    "release:minor": "npm version minor && git push origin master --tags && gh release create v$(node -p \"require('./package.json').version\") --generate-notes -R mohammadfarooqi/qbo-receipts-mcp",
+    "release:major": "npm version major && git push origin master --tags && gh release create v$(node -p \"require('./package.json').version\") --generate-notes -R mohammadfarooqi/qbo-receipts-mcp",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "quickbooks",
+    "quickbooks-online",
+    "qbo",
+    "accounting",
+    "bookkeeping",
+    "receipts",
+    "attachments",
+    "expense-management",
+    "multi-currency",
+    "canada",
+    "claude"
+  ],
+  "author": "Mohammad Farooqi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mohammadfarooqi/qbo-receipts-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mohammadfarooqi/qbo-receipts-mcp/issues"
+  },
+  "homepage": "https://github.com/mohammadfarooqi/qbo-receipts-mcp#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.13.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.12",
+    "typescript": "^5.8.3"
+  }
+}
