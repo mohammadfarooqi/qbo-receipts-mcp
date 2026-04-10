@@ -8,7 +8,8 @@ import {
     searchPurchasesInputSchema, searchPurchases,
     createPurchaseInputSchema, createPurchase,
     deletePurchaseInputSchema, deletePurchase,
-    uploadReceiptInputSchema, uploadReceipt
+    uploadReceiptInputSchema, uploadReceipt,
+    getAccountsInputSchema, getAccounts
 } from "./tools/index.js";
 
 const require = createRequire(import.meta.url);
@@ -40,6 +41,16 @@ server.registerTool("get_company_info", {
 }, async (args) => {
     try {
         const result = await withClient(c => getCompanyInfo(c, args));
+        return textResult(result);
+    } catch (e) { return errorResult(e); }
+});
+
+server.registerTool("get_accounts", {
+    description: "Fetch the QBO chart of accounts. Optional filters: accountType (e.g. Bank, Credit Card, Expense), active. Use this for discovery (finding payment account Ids like 1101/1102, expense account Ids for categorization) and dedup.",
+    inputSchema: getAccountsInputSchema.shape
+}, async (args) => {
+    try {
+        const result = await withClient(c => getAccounts(c, args));
         return textResult(result);
     } catch (e) { return errorResult(e); }
 });
