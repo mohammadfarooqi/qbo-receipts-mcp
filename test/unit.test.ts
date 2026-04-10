@@ -453,13 +453,13 @@ describe("schema — CompanyInfoSchema", () => {
             CompanyInfo: {
                 Id: "1",
                 SyncToken: "0",
-                CompanyName: "Uqaab Consultants Inc.",
+                CompanyName: "Test Company Inc.",
                 Country: "CA",
                 SupportedLanguages: "en"
             },
             time: "2026-04-10T00:00:00Z"
         });
-        assert.equal(result.CompanyInfo.CompanyName, "Uqaab Consultants Inc.");
+        assert.equal(result.CompanyInfo.CompanyName, "Test Company Inc.");
     });
 });
 
