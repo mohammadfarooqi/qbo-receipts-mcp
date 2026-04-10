@@ -6,14 +6,16 @@ export const searchPurchasesInputSchema = z.object({
     txnDateAfter: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Inclusive lower bound on transaction date (YYYY-MM-DD)"),
     txnDateBefore: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Inclusive upper bound on transaction date (YYYY-MM-DD)"),
     totalAmt: z.number().optional().describe("Exact total amount match (in the transaction currency, not home currency)"),
-    currencyCode: z.string().regex(/^[A-Z]{3}$/).optional().describe("ISO 4217 currency code (e.g. USD, CAD, EUR)"),
     maxResults: z.number().int().min(1).max(1000).default(100).describe("Max rows to return (1-1000)")
 });
 export type SearchPurchasesInput = z.infer<typeof searchPurchasesInputSchema>;
 
-const CURRENCY_CODE_PATTERN = /^[A-Z]{3}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+// NOTE: QBO's query language does not support CurrencyRef as a queryable property on Purchase.
+// Real Intuit returns HTTP 400 with "property 'CurrencyRef' is not queryable" (SCHEMA-2, discovered
+// 2026-04-10 during real-sandbox validation). Callers needing currency-specific dedup should filter
+// client-side on the returned rows' `CurrencyRef.value` field.
 export function buildPurchaseQuery(input: Partial<SearchPurchasesInput>): string {
     const clauses: string[] = [];
     if (input.txnDateAfter) {
@@ -27,10 +29,6 @@ export function buildPurchaseQuery(input: Partial<SearchPurchasesInput>): string
     if (input.totalAmt !== undefined) {
         if (!Number.isFinite(input.totalAmt) || input.totalAmt < 0) throw new Error(`Invalid totalAmt: ${input.totalAmt}`);
         clauses.push(`TotalAmt = '${input.totalAmt.toFixed(2)}'`);
-    }
-    if (input.currencyCode) {
-        if (!CURRENCY_CODE_PATTERN.test(input.currencyCode)) throw new Error(`Invalid currencyCode: ${input.currencyCode}`);
-        clauses.push(`CurrencyRef = '${input.currencyCode}'`);
     }
     const where = clauses.length > 0 ? ` WHERE ${clauses.join(" AND ")}` : "";
     const max = input.maxResults ?? 100;

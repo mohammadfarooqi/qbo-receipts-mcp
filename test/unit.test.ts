@@ -578,7 +578,7 @@ describe("schema — PurchaseQueryResponseSchema", () => {
     });
 });
 
-import { buildPurchaseQuery } from "../src/tools/search-purchases.js";
+import { buildPurchaseQuery, searchPurchasesInputSchema } from "../src/tools/search-purchases.js";
 
 describe("search-purchases — buildPurchaseQuery", () => {
     it("builds a base SELECT with no filters", () => {
@@ -594,16 +594,22 @@ describe("search-purchases — buildPurchaseQuery", () => {
         const q = buildPurchaseQuery({ totalAmt: 42.00 });
         assert.match(q, /TotalAmt = '42\.00'/);
     });
-    it("adds currency filter", () => {
-        const q = buildPurchaseQuery({ currencyCode: "USD" });
-        assert.match(q, /CurrencyRef = 'USD'/);
-    });
     it("respects max results", () => {
         const q = buildPurchaseQuery({ maxResults: 50 });
         assert.match(q, /MAXRESULTS 50$/);
     });
-    it("rejects SQL-injection-looking input in currency code", () => {
-        assert.throws(() => buildPurchaseQuery({ currencyCode: "USD' OR 1=1--" }), /Invalid/);
+});
+
+// search-purchases — SCHEMA-2 regression
+describe("search-purchases — currencyCode removed (SCHEMA-2)", () => {
+    it("schema silently drops currencyCode (not a valid filter)", () => {
+        const parsed = searchPurchasesInputSchema.parse({ currencyCode: "USD" }) as Record<string, unknown>;
+        assert.equal(parsed.currencyCode, undefined);
+    });
+
+    it("buildPurchaseQuery never emits CurrencyRef clause", () => {
+        const q = buildPurchaseQuery({});
+        assert.ok(!q.includes("CurrencyRef"), `Expected no CurrencyRef in query, got: ${q}`);
     });
 });
 
@@ -1067,8 +1073,18 @@ describe("search-vendors — input validation", () => {
         assert.equal(parsed.namePrefix, "Stripe Inc. (USD) 2024");
     });
 
-    it("rejects lowercase currencyCode", () => {
-        assert.throws(() => searchVendorsInputSchema.parse({ currencyCode: "usd" }));
+});
+
+// search-vendors — SCHEMA-2 regression
+describe("search-vendors — currencyCode removed (SCHEMA-2)", () => {
+    it("schema silently drops currencyCode (not a valid filter)", () => {
+        const parsed = searchVendorsInputSchema.parse({ currencyCode: "USD" }) as Record<string, unknown>;
+        assert.equal(parsed.currencyCode, undefined);
+    });
+
+    it("buildVendorsQuery never emits CurrencyRef clause", () => {
+        const q = buildVendorsQuery({ namePrefix: "Stripe", active: true, maxResults: 100 });
+        assert.ok(!q.includes("CurrencyRef"), `Expected no CurrencyRef in query, got: ${q}`);
     });
 });
 
@@ -1083,19 +1099,14 @@ describe("search-vendors — buildVendorsQuery", () => {
         assert.equal(q, "SELECT * FROM Vendor WHERE DisplayName LIKE 'Acme%' ORDER BY DisplayName MAXRESULTS 500");
     });
 
-    it("adds currencyCode clause", () => {
-        const q = buildVendorsQuery({ currencyCode: "USD", maxResults: 500 });
-        assert.equal(q, "SELECT * FROM Vendor WHERE CurrencyRef = 'USD' ORDER BY DisplayName MAXRESULTS 500");
-    });
-
     it("adds Active clause", () => {
         const q = buildVendorsQuery({ active: true, maxResults: 500 });
         assert.equal(q, "SELECT * FROM Vendor WHERE Active = true ORDER BY DisplayName MAXRESULTS 500");
     });
 
-    it("combines all three clauses", () => {
-        const q = buildVendorsQuery({ namePrefix: "Stripe", currencyCode: "USD", active: true, maxResults: 100 });
-        assert.equal(q, "SELECT * FROM Vendor WHERE DisplayName LIKE 'Stripe%' AND CurrencyRef = 'USD' AND Active = true ORDER BY DisplayName MAXRESULTS 100");
+    it("combines namePrefix and active clauses (no CurrencyRef)", () => {
+        const q = buildVendorsQuery({ namePrefix: "Stripe", active: true, maxResults: 100 });
+        assert.equal(q, "SELECT * FROM Vendor WHERE DisplayName LIKE 'Stripe%' AND Active = true ORDER BY DisplayName MAXRESULTS 100");
     });
 });
 

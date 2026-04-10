@@ -8,19 +8,19 @@ const NAME_PREFIX_PATTERN = /^[A-Za-z0-9 .,&()_\-]+$/;
 
 export const searchVendorsInputSchema = z.object({
     namePrefix: z.string().min(1).max(100).regex(NAME_PREFIX_PATTERN, "namePrefix contains unsafe characters").optional().describe("Prefix match on DisplayName. Safe characters only (no quotes, %, ;, backslash)."),
-    currencyCode: z.string().regex(/^[A-Z]{3}$/).optional().describe("ISO 4217 currency code (e.g. USD, CAD)"),
     active: z.boolean().optional().describe("Filter by Active flag"),
     maxResults: z.number().int().min(1).max(1000).default(500).describe("Max rows to return (1-1000)")
 });
 export type SearchVendorsInput = z.infer<typeof searchVendorsInputSchema>;
 
+// NOTE: QBO's query language does not support CurrencyRef as a queryable property on Vendor.
+// Real Intuit returns HTTP 400 with "property 'CurrencyRef' is not queryable" (SCHEMA-2, discovered
+// 2026-04-10 during real-sandbox validation). Callers needing currency-specific dedup should filter
+// client-side on the returned rows' `CurrencyRef.value` field.
 export function buildVendorsQuery(input: Partial<SearchVendorsInput>): string {
     const clauses: string[] = [];
     if (input.namePrefix) {
         clauses.push(`DisplayName LIKE '${input.namePrefix}%'`);
-    }
-    if (input.currencyCode) {
-        clauses.push(`CurrencyRef = '${input.currencyCode}'`);
     }
     if (input.active !== undefined) {
         clauses.push(`Active = ${input.active ? "true" : "false"}`);
