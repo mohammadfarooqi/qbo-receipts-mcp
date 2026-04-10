@@ -922,3 +922,83 @@ describe("schema — AccountQueryResponseSchema", () => {
         assert.equal(parsed.QueryResponse.Account, undefined);
     });
 });
+
+import { VendorSchema, VendorResponseSchema, VendorQueryResponseSchema } from "../src/schema.js";
+
+describe("schema — VendorSchema", () => {
+    it("accepts a minimal active vendor", () => {
+        const parsed = VendorSchema.parse({
+            Id: "77",
+            SyncToken: "0",
+            DisplayName: "Acme Corp",
+            Active: true
+        });
+        assert.equal(parsed.DisplayName, "Acme Corp");
+    });
+
+    it("accepts a USD vendor with CurrencyRef and addresses", () => {
+        const parsed = VendorSchema.parse({
+            Id: "78",
+            SyncToken: "2",
+            DisplayName: "Stripe Inc. (USD)",
+            CompanyName: "Stripe, Inc.",
+            Active: true,
+            CurrencyRef: { value: "USD", name: "United States Dollar" },
+            PrimaryEmailAddr: { Address: "billing@stripe.com" },
+            BillAddr: {
+                Line1: "510 Townsend St",
+                City: "San Francisco",
+                CountrySubDivisionCode: "CA",
+                PostalCode: "94103",
+                Country: "US"
+            }
+        });
+        assert.equal(parsed.CurrencyRef?.value, "USD");
+        assert.equal(parsed.BillAddr?.City, "San Francisco");
+    });
+
+    it("passes through unknown fields", () => {
+        const parsed = VendorSchema.parse({
+            Id: "9",
+            SyncToken: "0",
+            DisplayName: "X",
+            Active: true,
+            FutureField: 42
+        });
+        assert.equal(parsed.Id, "9");
+        assert.equal((parsed as Record<string, unknown>)["FutureField"], 42);
+    });
+});
+
+describe("schema — VendorResponseSchema", () => {
+    it("accepts a single-vendor response", () => {
+        const parsed = VendorResponseSchema.parse({
+            Vendor: { Id: "1", SyncToken: "0", DisplayName: "V", Active: true },
+            time: "2026-04-10T00:00:00Z"
+        });
+        assert.equal(parsed.Vendor.Id, "1");
+    });
+});
+
+describe("schema — VendorQueryResponseSchema", () => {
+    it("accepts a wrapped query response", () => {
+        const parsed = VendorQueryResponseSchema.parse({
+            QueryResponse: {
+                Vendor: [
+                    { Id: "1", SyncToken: "0", DisplayName: "A", Active: true },
+                    { Id: "2", SyncToken: "0", DisplayName: "B", Active: false }
+                ],
+                startPosition: 1,
+                maxResults: 2
+            }
+        });
+        assert.equal(parsed.QueryResponse.Vendor?.length, 2);
+    });
+
+    it("accepts empty results", () => {
+        const parsed = VendorQueryResponseSchema.parse({
+            QueryResponse: { startPosition: 1, maxResults: 0 }
+        });
+        assert.equal(parsed.QueryResponse.Vendor, undefined);
+    });
+});

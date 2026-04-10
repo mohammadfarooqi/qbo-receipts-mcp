@@ -150,3 +150,55 @@ export const AccountQueryResponseSchema = z.object({
     time: z.string().optional()
 });
 export type AccountQueryResponse = z.infer<typeof AccountQueryResponseSchema>;
+
+const AddressSchema = z.object({
+    Line1: z.string().optional(),
+    Line2: z.string().optional(),
+    City: z.string().optional(),
+    CountrySubDivisionCode: z.string().optional(),
+    PostalCode: z.string().optional(),
+    Country: z.string().optional()
+}).passthrough();
+
+const EmailAddrSchema = z.object({ Address: z.string() }).passthrough();
+const PhoneSchema = z.object({ FreeFormNumber: z.string().optional() }).passthrough();
+const WebAddrSchema = z.object({ URI: z.string().optional() }).passthrough();
+
+export const VendorSchema = z.object({
+    Id: z.string(),
+    SyncToken: z.string(),
+    DisplayName: z.string(),
+    CompanyName: z.string().optional(),
+    GivenName: z.string().optional(),
+    FamilyName: z.string().optional(),
+    Active: z.boolean(),
+    Balance: z.number().optional(),
+    CurrencyRef: RefSchema.optional(),
+    PrimaryEmailAddr: EmailAddrSchema.optional(),
+    PrimaryPhone: PhoneSchema.optional(),
+    WebAddr: WebAddrSchema.optional(),
+    BillAddr: AddressSchema.optional(),
+    Notes: z.string().optional(),
+    AcctNum: z.string().optional(),
+    TaxIdentifier: z.string().optional(),
+    Vendor1099: z.boolean().optional(),
+    MetaData: MetaDataSchema
+}).passthrough();
+export type Vendor = z.infer<typeof VendorSchema>;
+
+export const VendorResponseSchema = z.object({
+    Vendor: VendorSchema,
+    time: z.string().optional()
+});
+export type VendorResponse = z.infer<typeof VendorResponseSchema>;
+
+export const VendorQueryResponseSchema = z.object({
+    QueryResponse: z.object({
+        Vendor: z.array(VendorSchema).optional(),
+        startPosition: z.number().optional(),
+        maxResults: z.number().optional(),
+        totalCount: z.number().optional()
+    }),
+    time: z.string().optional()
+});
+export type VendorQueryResponse = z.infer<typeof VendorQueryResponseSchema>;
