@@ -53,13 +53,18 @@ const AccountBasedExpenseLineDetailSchema = z.object({
     BillableStatus: z.string().optional()
 });
 
+// Read-side: QBO returns multiple line detail types (AccountBasedExpenseLineDetail,
+// ItemBasedExpenseLineDetail, SubTotalLineDetail, etc.). We accept any DetailType
+// string and let through unknown fields so `search_purchases` works against real
+// data. Write-side validation lives in `buildPurchasePayload`, which always
+// constructs AccountBasedExpenseLineDetail directly.
 const PurchaseLineSchema = z.object({
     Id: z.string().optional(),
     Amount: z.number(),
     Description: z.string().optional(),
-    DetailType: z.literal("AccountBasedExpenseLineDetail"),
-    AccountBasedExpenseLineDetail: AccountBasedExpenseLineDetailSchema
-});
+    DetailType: z.string(),
+    AccountBasedExpenseLineDetail: AccountBasedExpenseLineDetailSchema.optional()
+}).passthrough();
 
 export const PurchaseSchema = z.object({
     Id: z.string(),

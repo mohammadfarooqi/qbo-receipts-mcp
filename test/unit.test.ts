@@ -520,6 +520,62 @@ describe("schema — PurchaseQueryResponseSchema", () => {
         });
         assert.equal(result.QueryResponse.Purchase, undefined);
     });
+
+    it("parses a Purchase with ItemBasedExpenseLineDetail line (read-side leniency)", () => {
+        // Regression test for the bug found against real sandbox data on 2026-04-10:
+        // QBO returns Purchases with multiple DetailType values (AccountBasedExpenseLineDetail,
+        // ItemBasedExpenseLineDetail, etc). Read-side parsing must accept any DetailType.
+        const result = PurchaseQueryResponseSchema.parse({
+            QueryResponse: {
+                Purchase: [{
+                    Id: "99",
+                    SyncToken: "0",
+                    TxnDate: "2026-03-15",
+                    PaymentType: "Check",
+                    AccountRef: { value: "38" },
+                    TotalAmt: 250,
+                    Line: [{
+                        Id: "1",
+                        Amount: 250,
+                        DetailType: "ItemBasedExpenseLineDetail",
+                        ItemBasedExpenseLineDetail: {
+                            ItemRef: { value: "1", name: "Landscaping" },
+                            Qty: 1,
+                            UnitPrice: 250
+                        }
+                    }]
+                }],
+                startPosition: 1,
+                maxResults: 1
+            },
+            time: "2026-04-10T00:00:00Z"
+        });
+        assert.equal(result.QueryResponse.Purchase?.[0].Line[0].DetailType, "ItemBasedExpenseLineDetail");
+    });
+
+    it("parses a Purchase with an unknown DetailType line (future-proof passthrough)", () => {
+        const result = PurchaseQueryResponseSchema.parse({
+            QueryResponse: {
+                Purchase: [{
+                    Id: "100",
+                    SyncToken: "0",
+                    TxnDate: "2026-03-15",
+                    PaymentType: "CreditCard",
+                    AccountRef: { value: "38" },
+                    TotalAmt: 100,
+                    Line: [{
+                        Amount: 100,
+                        DetailType: "SomeFutureLineDetail",
+                        SomeFutureLineDetail: { foo: "bar" }
+                    }]
+                }],
+                startPosition: 1,
+                maxResults: 1
+            },
+            time: "2026-04-10T00:00:00Z"
+        });
+        assert.equal(result.QueryResponse.Purchase?.[0].Line[0].DetailType, "SomeFutureLineDetail");
+    });
 });
 
 import { buildPurchaseQuery } from "../src/tools/search-purchases.js";
