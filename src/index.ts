@@ -9,7 +9,9 @@ import {
     createPurchaseInputSchema, createPurchase,
     deletePurchaseInputSchema, deletePurchase,
     uploadReceiptInputSchema, uploadReceipt,
-    getAccountsInputSchema, getAccounts
+    getAccountsInputSchema, getAccounts,
+    searchVendorsInputSchema, searchVendors,
+    getVendorInputSchema, getVendor
 } from "./tools/index.js";
 
 const require = createRequire(import.meta.url);
@@ -51,6 +53,26 @@ server.registerTool("get_accounts", {
 }, async (args) => {
     try {
         const result = await withClient(c => getAccounts(c, args));
+        return textResult(result);
+    } catch (e) { return errorResult(e); }
+});
+
+server.registerTool("search_vendors", {
+    description: "Query QBO Vendor records with optional filters on namePrefix (LIKE match), currencyCode, and active status. Use for dedup before calling create_vendor. DisplayName ordering, max 1000 results per page.",
+    inputSchema: searchVendorsInputSchema.shape
+}, async (args) => {
+    try {
+        const result = await withClient(c => searchVendors(c, args));
+        return textResult(result);
+    } catch (e) { return errorResult(e); }
+});
+
+server.registerTool("get_vendor", {
+    description: "Fetch a single QBO Vendor by Id. Returns the full Vendor entity including CurrencyRef, billing address, and SyncToken.",
+    inputSchema: getVendorInputSchema.shape
+}, async (args) => {
+    try {
+        const result = await withClient(c => getVendor(c, args));
         return textResult(result);
     } catch (e) { return errorResult(e); }
 });
