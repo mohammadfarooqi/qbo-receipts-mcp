@@ -630,3 +630,85 @@ describe("create-purchase — buildPurchasePayload", () => {
         }), /ExchangeRate is required/);
     });
 });
+
+import { validateUploadReceiptInput } from "../src/tools/upload-receipt.js";
+
+describe("upload-receipt — validation", () => {
+    it("rejects absolute paths outside allowed dirs when allowlist set", () => {
+        assert.throws(() => validateUploadReceiptInput({
+            filePath: "/etc/passwd.pdf",
+            contentType: "application/pdf",
+            entityType: "Purchase",
+            entityId: "42"
+        }, { allowedPrefixes: ["/Users/me/receipts/"] }), /outside allowed/);
+    });
+    it("rejects path traversal", () => {
+        assert.throws(() => validateUploadReceiptInput({
+            filePath: "../../../etc/passwd",
+            contentType: "application/pdf",
+            entityType: "Purchase",
+            entityId: "42"
+        }, {}), /path traversal/i);
+    });
+    it("rejects invalid content type", () => {
+        assert.throws(() => validateUploadReceiptInput({
+            filePath: "/tmp/r.exe",
+            contentType: "application/x-msdownload",
+            entityType: "Purchase",
+            entityId: "42"
+        }, {}), /contentType/);
+    });
+    it("accepts PDF, PNG, JPEG", () => {
+        for (const ct of ["application/pdf", "image/png", "image/jpeg"]) {
+            assert.doesNotThrow(() => validateUploadReceiptInput({
+                filePath: "/tmp/r.pdf",
+                contentType: ct,
+                entityType: "Purchase",
+                entityId: "42"
+            }, {}));
+        }
+    });
+    it("rejects filename with double-quote (multipart header injection)", () => {
+        assert.throws(() => validateUploadReceiptInput({
+            filePath: `/tmp/a"bad".pdf`,
+            contentType: "application/pdf",
+            entityType: "Purchase",
+            entityId: "42"
+        }, {}), /Unsafe filename/);
+    });
+    it("rejects fileNameOverride with CRLF (header injection)", () => {
+        assert.throws(() => validateUploadReceiptInput({
+            filePath: "/tmp/r.pdf",
+            contentType: "application/pdf",
+            entityType: "Purchase",
+            entityId: "42",
+            fileNameOverride: "foo\r\nX-Injected: evil.pdf"
+        }, {}), /Unsafe filename/);
+    });
+    it("rejects fileNameOverride with NUL byte", () => {
+        assert.throws(() => validateUploadReceiptInput({
+            filePath: "/tmp/r.pdf",
+            contentType: "application/pdf",
+            entityType: "Purchase",
+            entityId: "42",
+            fileNameOverride: "foo\0evil.pdf"
+        }, {}), /Unsafe filename/);
+    });
+    it("rejects fileNameOverride with backslash", () => {
+        assert.throws(() => validateUploadReceiptInput({
+            filePath: "/tmp/r.pdf",
+            contentType: "application/pdf",
+            entityType: "Purchase",
+            entityId: "42",
+            fileNameOverride: "foo\\bar.pdf"
+        }, {}), /Unsafe filename/);
+    });
+    it("accepts normal filenames with spaces, hyphens, underscores, dots", () => {
+        assert.doesNotThrow(() => validateUploadReceiptInput({
+            filePath: "/tmp/AWS invoice 2025-11-04.pdf",
+            contentType: "application/pdf",
+            entityType: "Purchase",
+            entityId: "42"
+        }, {}));
+    });
+});
