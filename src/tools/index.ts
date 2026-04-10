@@ -6,3 +6,4 @@ export * from "./upload-receipt.js";
 export * from "./get-accounts.js";
 export * from "./search-vendors.js";
 export * from "./get-vendor.js";
+export * from "./create-vendor.js";

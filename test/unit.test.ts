@@ -1129,3 +1129,69 @@ describe("get-vendor — fetches from /vendor/:id", () => {
         assert.equal(result.Vendor.Id, "77");
     });
 });
+
+import { buildVendorPayload, createVendorInputSchema, createVendor } from "../src/tools/create-vendor.js";
+
+describe("create-vendor — input validation", () => {
+    it("requires displayName", () => {
+        assert.throws(() => createVendorInputSchema.parse({}));
+    });
+
+    it("rejects invalid currencyCode", () => {
+        assert.throws(() => createVendorInputSchema.parse({ displayName: "X", currencyCode: "us" }));
+    });
+
+    it("accepts a minimal input", () => {
+        const parsed = createVendorInputSchema.parse({ displayName: "Acme Corp" });
+        assert.equal(parsed.displayName, "Acme Corp");
+    });
+});
+
+describe("create-vendor — buildVendorPayload", () => {
+    it("builds minimal payload", () => {
+        const p = buildVendorPayload({ displayName: "Acme Corp" });
+        assert.deepEqual(p, { DisplayName: "Acme Corp" });
+    });
+
+    it("includes CurrencyRef when currencyCode is set", () => {
+        const p = buildVendorPayload({ displayName: "Stripe (USD)", currencyCode: "USD" });
+        assert.deepEqual(p, { DisplayName: "Stripe (USD)", CurrencyRef: { value: "USD" } });
+    });
+
+    it("includes companyName and email when set", () => {
+        const p = buildVendorPayload({
+            displayName: "Acme",
+            companyName: "Acme Corp",
+            email: "billing@acme.com"
+        }) as Record<string, unknown>;
+        assert.equal(p.CompanyName, "Acme Corp");
+        assert.deepEqual(p.PrimaryEmailAddr, { Address: "billing@acme.com" });
+    });
+
+    it("includes BillAddr when any address field is provided", () => {
+        const p = buildVendorPayload({
+            displayName: "A",
+            billAddrLine1: "1 Main St",
+            billAddrCity: "Toronto",
+            billAddrCountrySubDivisionCode: "ON",
+            billAddrPostalCode: "M5V 1A1",
+            billAddrCountry: "CA"
+        }) as Record<string, unknown>;
+        assert.deepEqual(p.BillAddr, {
+            Line1: "1 Main St",
+            City: "Toronto",
+            CountrySubDivisionCode: "ON",
+            PostalCode: "M5V 1A1",
+            Country: "CA"
+        });
+    });
+});
+
+describe("create-vendor — dry-run", () => {
+    it("returns dry-run payload when QBO_DRY_RUN=true", async () => {
+        const fake = { getRealmId: () => "REALM", fetchJson: async () => { throw new Error("should not be called"); } } as unknown as import("../src/client.js").QboClient;
+        const result = await createVendor(fake, { displayName: "X", currencyCode: "USD" }, { QBO_DRY_RUN: "true" }) as { dryRun: boolean; wouldSend: { body: unknown } };
+        assert.equal(result.dryRun, true);
+        assert.deepEqual(result.wouldSend.body, { DisplayName: "X", CurrencyRef: { value: "USD" } });
+    });
+});
