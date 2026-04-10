@@ -1195,3 +1195,60 @@ describe("create-vendor — dry-run", () => {
         assert.deepEqual(result.wouldSend.body, { DisplayName: "X", CurrencyRef: { value: "USD" } });
     });
 });
+
+import { buildVendorUpdatePayload, updateVendorInputSchema, updateVendor } from "../src/tools/update-vendor.js";
+
+describe("update-vendor — input validation", () => {
+    it("requires id and syncToken", () => {
+        assert.throws(() => updateVendorInputSchema.parse({}));
+        assert.throws(() => updateVendorInputSchema.parse({ id: "1" }));
+        assert.throws(() => updateVendorInputSchema.parse({ syncToken: "0" }));
+    });
+
+    it("has no currencyCode field (permanence is enforced at the schema level)", () => {
+        const parsed = updateVendorInputSchema.parse({ id: "1", syncToken: "0", displayName: "X" }) as Record<string, unknown>;
+        assert.equal(parsed.currencyCode, undefined);
+    });
+
+    it("rejects unknown fields like currencyCode (strict mode)", () => {
+        assert.throws(() => updateVendorInputSchema.parse({ id: "1", syncToken: "0", currencyCode: "USD" }));
+    });
+});
+
+describe("update-vendor — buildVendorUpdatePayload", () => {
+    it("produces a sparse update with Id, SyncToken, sparse flag, and changed fields", () => {
+        const p = buildVendorUpdatePayload({ id: "77", syncToken: "3", displayName: "Acme Ltd" });
+        assert.deepEqual(p, {
+            Id: "77",
+            SyncToken: "3",
+            sparse: true,
+            DisplayName: "Acme Ltd"
+        });
+    });
+
+    it("includes multiple changed fields", () => {
+        const p = buildVendorUpdatePayload({
+            id: "1",
+            syncToken: "0",
+            displayName: "A",
+            active: false,
+            notes: "archived"
+        }) as Record<string, unknown>;
+        assert.equal(p.DisplayName, "A");
+        assert.equal(p.Active, false);
+        assert.equal(p.Notes, "archived");
+    });
+
+    it("throws if no mutable fields are provided", () => {
+        assert.throws(() => buildVendorUpdatePayload({ id: "1", syncToken: "0" }), /at least one field/);
+    });
+});
+
+describe("update-vendor — dry-run", () => {
+    it("returns dry-run payload when QBO_DRY_RUN=true", async () => {
+        const fake = { getRealmId: () => "REALM", fetchJson: async () => { throw new Error("should not call"); } } as unknown as import("../src/client.js").QboClient;
+        const result = await updateVendor(fake, { id: "77", syncToken: "3", displayName: "New Name" }, { QBO_DRY_RUN: "true" }) as { dryRun: boolean; wouldSend: { body: { DisplayName: string } } };
+        assert.equal(result.dryRun, true);
+        assert.equal(result.wouldSend.body.DisplayName, "New Name");
+    });
+});
