@@ -387,3 +387,40 @@ describe("client — clientFromEnv", () => {
         assert.equal(client.getBaseUrl(), "http://localhost:1234");
     });
 });
+
+import { validateSessionTag, formatMemoMarker } from "../src/session.js";
+
+describe("session — validateSessionTag", () => {
+    it("accepts valid YYYY-MM-DD-HHmm", () => {
+        assert.equal(validateSessionTag("2026-04-10-0930"), "2026-04-10-0930");
+    });
+    it("rejects missing parts", () => {
+        assert.throws(() => validateSessionTag("2026-04-10"), /Invalid session tag/);
+    });
+    it("rejects wrong format", () => {
+        assert.throws(() => validateSessionTag("April-10-0930"), /Invalid session tag/);
+    });
+    it("rejects empty", () => {
+        assert.throws(() => validateSessionTag(""), /Invalid session tag/);
+    });
+});
+
+describe("session — formatMemoMarker", () => {
+    it("formats with source, id, and session tag", () => {
+        assert.equal(
+            formatMemoMarker({ source: "gmail", sourceId: "abc123", sessionTag: "2026-04-10-0930" }),
+            "auto:gmail:abc123 | sess:2026-04-10-0930"
+        );
+    });
+    it("appends to an existing note", () => {
+        assert.equal(
+            formatMemoMarker({
+                source: "pp",
+                sourceId: "TXN1",
+                sessionTag: "2026-04-10-0930",
+                existingNote: "Client dinner"
+            }),
+            "Client dinner | auto:pp:TXN1 | sess:2026-04-10-0930"
+        );
+    });
+});
