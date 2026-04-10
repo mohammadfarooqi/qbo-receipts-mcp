@@ -124,3 +124,36 @@ describe("oauth-cli — writeTokensToEnv", () => {
         }
     });
 });
+
+import { FaultSchema, TokenRefreshResponseSchema } from "../src/schema.js";
+
+describe("schema — FaultSchema", () => {
+    it("parses a valid QBO Fault error response", () => {
+        const result = FaultSchema.parse({
+            Fault: {
+                Error: [{
+                    Message: "Invalid Reference Id",
+                    Detail: "Something is wrong",
+                    code: "2500",
+                    element: "Account"
+                }],
+                type: "ValidationFault"
+            },
+            time: "2026-04-10T12:00:00.000Z"
+        });
+        assert.equal(result.Fault.Error[0].code, "2500");
+    });
+});
+
+describe("schema — TokenRefreshResponseSchema", () => {
+    it("parses a valid token refresh response", () => {
+        const result = TokenRefreshResponseSchema.parse({
+            access_token: "new-access",
+            refresh_token: "new-refresh",
+            expires_in: 3600,
+            x_refresh_token_expires_in: 8726400,
+            token_type: "bearer"
+        });
+        assert.equal(result.access_token, "new-access");
+    });
+});
