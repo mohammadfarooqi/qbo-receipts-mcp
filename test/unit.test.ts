@@ -157,3 +157,56 @@ describe("schema — TokenRefreshResponseSchema", () => {
         assert.equal(result.access_token, "new-access");
     });
 });
+
+import { QboClient } from "../src/client.js";
+import { createServer as createHttpServer2 } from "node:http";
+
+describe("client — refreshAccessToken", () => {
+    it("POSTs refresh_token grant and updates stored tokens", async () => {
+        let capturedAuth = "";
+        let capturedBody = "";
+        const server = createHttpServer2((req, res) => {
+            capturedAuth = req.headers.authorization || "";
+            const chunks: Buffer[] = [];
+            req.on("data", c => chunks.push(c));
+            req.on("end", () => {
+                capturedBody = Buffer.concat(chunks).toString();
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({
+                    access_token: "refreshed-access",
+                    refresh_token: "rotated-refresh",
+                    expires_in: 3600,
+                    x_refresh_token_expires_in: 8726400,
+                    token_type: "bearer"
+                }));
+            });
+        });
+        await new Promise<void>(r => server.listen(0, r));
+        const port = (server.address() as { port: number }).port;
+
+        try {
+            const client = new QboClient({
+                clientId: "CID",
+                clientSecret: "SEC",
+                accessToken: "old-access",
+                refreshToken: "old-refresh",
+                realmId: "REALM",
+                tokenUrl: `http://localhost:${port}/oauth2/v1/tokens/bearer`,
+                baseUrl: "http://unused"
+            });
+            await client.refreshAccessToken();
+
+            assert.equal(client.getAccessToken(), "refreshed-access");
+            assert.equal(client.getRefreshToken(), "rotated-refresh");
+
+            const expectedAuth = "Basic " + Buffer.from("CID:SEC").toString("base64");
+            assert.equal(capturedAuth, expectedAuth);
+
+            const params = new URLSearchParams(capturedBody);
+            assert.equal(params.get("grant_type"), "refresh_token");
+            assert.equal(params.get("refresh_token"), "old-refresh");
+        } finally {
+            await new Promise<void>(r => server.close(() => r()));
+        }
+    });
+});
