@@ -1469,3 +1469,120 @@ describe("get-boc-rate — fetches via BoC base URL override", () => {
         }
     });
 });
+
+import {
+    rollbackSessionInputSchema,
+    filterPurchasesBySessionTag,
+    computeDefaultDateWindow,
+    rollbackSession
+} from "../src/tools/rollback-session.js";
+
+describe("rollback-session — input validation", () => {
+    it("rejects invalid session tag", () => {
+        assert.throws(() => rollbackSessionInputSchema.parse({ sessionTag: "not-a-tag" }));
+    });
+
+    it("accepts a valid session tag", () => {
+        assert.equal(
+            rollbackSessionInputSchema.parse({ sessionTag: "2026-04-10-0930" }).sessionTag,
+            "2026-04-10-0930"
+        );
+    });
+
+    it("accepts optional date bounds", () => {
+        const parsed = rollbackSessionInputSchema.parse({
+            sessionTag: "2026-04-10-0930",
+            txnDateAfter: "2026-01-01",
+            txnDateBefore: "2026-12-31"
+        });
+        assert.equal(parsed.txnDateAfter, "2026-01-01");
+    });
+});
+
+describe("rollback-session — filterPurchasesBySessionTag", () => {
+    it("matches Purchases whose PrivateNote contains sess:<tag>", () => {
+        const rows = [
+            { Id: "1", SyncToken: "0", PrivateNote: "auto:manual:x | sess:2026-04-10-0930" },
+            { Id: "2", SyncToken: "0", PrivateNote: "old note | sess:2026-04-10-0930" },
+            { Id: "3", SyncToken: "0", PrivateNote: "different session | sess:2026-01-01-1200" },
+            { Id: "4", SyncToken: "0" }
+        ];
+        const hits = filterPurchasesBySessionTag(rows, "2026-04-10-0930");
+        assert.deepEqual(hits.map((r) => r.Id), ["1", "2"]);
+    });
+
+    it("is deterministic for edge cases with trailing characters", () => {
+        const rows = [
+            { Id: "1", SyncToken: "0", PrivateNote: "sess:2026-04-10-0930x" }
+        ];
+        const hits = filterPurchasesBySessionTag(rows, "2026-04-10-0930");
+        assert.ok(Array.isArray(hits));
+    });
+});
+
+describe("rollback-session — computeDefaultDateWindow", () => {
+    it("defaults to last 60 days from a reference now", () => {
+        const { txnDateAfter, txnDateBefore } = computeDefaultDateWindow(new Date("2026-04-10T00:00:00Z"));
+        assert.equal(txnDateBefore, "2026-04-11");
+        assert.equal(txnDateAfter, "2026-02-09");
+    });
+});
+
+describe("rollback-session — dry-run", () => {
+    it("returns matched ids without deleting when QBO_DRY_RUN=true", async () => {
+        const calls: string[] = [];
+        const fake = {
+            getRealmId: () => "REALM",
+            fetchJson: async (path: string) => {
+                calls.push(path);
+                if (path.includes("/query?")) {
+                    return {
+                        QueryResponse: {
+                            Purchase: [
+                                { Id: "1", SyncToken: "0", TxnDate: "2026-04-10", PaymentType: "CreditCard", AccountRef: { value: "1101" }, TotalAmt: 10, PrivateNote: "sess:2026-04-10-0930", Line: [] },
+                                { Id: "2", SyncToken: "0", TxnDate: "2026-04-10", PaymentType: "CreditCard", AccountRef: { value: "1101" }, TotalAmt: 20, PrivateNote: "sess:2026-04-10-0930", Line: [] }
+                            ]
+                        }
+                    };
+                }
+                throw new Error(`unexpected path in dry-run: ${path}`);
+            }
+        } as unknown as import("../src/client.js").QboClient;
+        const result = await rollbackSession(fake, { sessionTag: "2026-04-10-0930" }, { QBO_DRY_RUN: "true" }) as { dryRun: boolean; matched: number; deleted: number; ids: string[] };
+        assert.equal(result.dryRun, true);
+        assert.equal(result.matched, 2);
+        assert.equal(result.deleted, 0);
+        assert.deepEqual(result.ids, ["1", "2"]);
+        assert.equal(calls.filter((p) => p.includes("operation=delete")).length, 0);
+    });
+});
+
+describe("rollback-session — real-delete path", () => {
+    it("deletes each matching Purchase and returns a summary", async () => {
+        const deleted: string[] = [];
+        const fake = {
+            getRealmId: () => "REALM",
+            fetchJson: async (path: string, init?: { body?: string }) => {
+                if (path.includes("operation=delete")) {
+                    const body = JSON.parse(init!.body!);
+                    deleted.push(body.Id);
+                    return { Purchase: { ...body, status: "Deleted" } };
+                }
+                if (path.includes("/query?")) {
+                    return {
+                        QueryResponse: {
+                            Purchase: [
+                                { Id: "5", SyncToken: "0", TxnDate: "2026-04-10", PaymentType: "CreditCard", AccountRef: { value: "1101" }, TotalAmt: 10, PrivateNote: "sess:2026-04-10-0930", Line: [] }
+                            ]
+                        }
+                    };
+                }
+                throw new Error(`unexpected path: ${path}`);
+            }
+        } as unknown as import("../src/client.js").QboClient;
+        const result = await rollbackSession(fake, { sessionTag: "2026-04-10-0930" }, {}) as { matched: number; deleted: number; ids: string[] };
+        assert.equal(result.matched, 1);
+        assert.equal(result.deleted, 1);
+        assert.deepEqual(deleted, ["5"]);
+    });
+});

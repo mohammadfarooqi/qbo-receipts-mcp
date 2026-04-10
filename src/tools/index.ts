@@ -10,3 +10,4 @@ export * from "./create-vendor.js";
 export * from "./update-vendor.js";
 export * from "./query.js";
 export * from "./get-boc-rate.js";
+export * from "./rollback-session.js";
