@@ -6,33 +6,25 @@ Every item here originated from real dogfooding — either code review during im
 
 ---
 
+## v0.1.0 — Resolved
+
+### [PKG-1] bin entries point to wrong paths — FIXED 2026-04-10
+Fixed by updating `package.json` `bin`, `start`, `oauth` script paths to `dist/src/*.js` and narrowing `files` allowlist to `dist/src/` (so tests don't ship). See commit for details.
+
+### [PKG-2] dist/test/** files ship in published tarball — FIXED 2026-04-10
+Resolved by the same `files` allowlist change as PKG-1.
+
+### [SEC-1] Symlink following in upload_receipt — FIXED 2026-04-10
+Fixed in Task 25 hardening commit. `uploadReceipt` now calls `fs.realpathSync.native()` to canonicalize the file path and re-checks the allowlist against the canonical path. Four new tests (symlink escape + symlink within allowlist + allowlist prefix trailing slash + legitimate file).
+
+### [SEC-2] Allowlist prefix without trailing slash — FIXED 2026-04-10
+Fixed in Task 25 hardening commit. `validateUploadReceiptInput` now normalizes each allowlist prefix to end with `/` and appends `/` to the candidate path before the `startsWith` check.
+
+---
+
 ## v0.1.0 (must-fix before first release)
 
-### [PKG-1] `bin` entries point to wrong paths — binaries unusable after install
-**Source:** Task 30 validation scan (2026-04-09)
-**Severity:** High (release-blocking)
-**Details:** `package.json` declares `"bin": { "qbo-receipts-mcp": "dist/index.js", "qbo-receipts-mcp-oauth": "dist/oauth-cli.js" }`, but `tsconfig.json` sets `rootDir: "."` and `include: ["src/**/*.ts", "test/**/*.ts"]`, so `tsc` emits to `dist/src/index.js` and `dist/src/oauth-cli.js`. After `npm install -g qbo-receipts-mcp` the symlinks created by npm will point at non-existent files and `npx qbo-receipts-mcp` will fail with ENOENT. Local `npm run start` also breaks — it references `dist/index.js`. This is masked during development because `npm test` runs `node --test dist/test/...` directly.
-**Fix:** Either (a) change tsconfig to `rootDir: "./src"` and compile tests separately, or (b) update `package.json` `bin` + `start`/`oauth` scripts to `dist/src/index.js` and `dist/src/oauth-cli.js`. Option (a) is cleaner because it keeps `dist/` free of the `src/` prefix. Either way, the `files` array should also add `!dist/test/**` or the test compilation should move out of `dist/`. Must be fixed before v0.1.0 tag.
-
-### [PKG-2] `dist/test/**` files ship in the published tarball
-**Source:** Task 30 validation scan (2026-04-09)
-**Severity:** Medium
-**Details:** `npm pack --dry-run` reports `dist/test/integration.test.js` (7.0 kB), `dist/test/mock-server.js` (4.9 kB), and `dist/test/unit.test.js` (31.7 kB) inside the tarball. Test files should not ship to npm consumers — they bloat the package (~44 kB of the 81 kB unpacked size is test code) and leak internal test fixtures. Caused by the same `rootDir: "."` setting as PKG-1 combined with `"files": ["dist/"]`.
-**Fix:** Fixing PKG-1 via `rootDir: "./src"` resolves this by putting tests in a separate build output. Alternatively, add a separate `tsconfig.test.json` that emits elsewhere (e.g., `build/test/`) and keep `dist/` for the publishable artifacts only.
-
-### [SEC-1] Symlink following in `upload_receipt`
-**Source:** Opus security review of Task 25 (2026-04-10)
-**Severity:** High
-**Details:** `statSync` and `readFileSync` in `src/tools/upload-receipt.ts` follow symlinks. A symlink placed inside `QBO_ATTACH_ALLOWED_DIRS` pointing to a sensitive file (`~/.ssh/id_rsa`, `/etc/shadow`, etc.) would be uploaded to QBO without the allowlist check catching it.
-**Fix:** Use `fs.realpathSync()` to canonicalize the path before the allowlist check. Re-verify the canonical path is within an allowed prefix.
-**Status:** FIXING NOW (Task 25 hardening)
-
-### [SEC-2] Allowlist prefix without trailing slash
-**Source:** Opus security review of Task 25 (2026-04-10)
-**Severity:** High
-**Details:** `allowedPrefixes.some(p => normalized.startsWith(p))` allows `/Users/me` to match `/Users/meanwhile/evil.pdf`. User sets `QBO_ATTACH_ALLOWED_DIRS=/Users/me/receipts` thinking only that directory is allowed; actually any path starting with `/Users/me/receipts` (including sibling dirs like `/Users/me/receipts-leak/`) is allowed.
-**Fix:** Append `/` to each prefix if missing before `startsWith` comparison, OR compare path segments.
-**Status:** FIXING NOW (Task 25 hardening)
+_All previously-listed items are resolved. See "v0.1.0 — Resolved" above._
 
 ---
 
