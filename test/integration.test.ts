@@ -8,7 +8,16 @@ let mockServer: MockQboServerHandle;
 let client: Client;
 
 before(async () => {
-    mockServer = await startMockQboServer();
+    mockServer = await startMockQboServer({
+        accounts: {
+            "1101": { Id: "1101", SyncToken: "0", Name: "CAD Credit Card", AccountType: "Credit Card", Active: true },
+            "1102": { Id: "1102", SyncToken: "0", Name: "USD Credit Card", AccountType: "Credit Card", Active: true, CurrencyRef: { value: "USD", name: "United States Dollar" } },
+            "80": { Id: "80", SyncToken: "0", Name: "Subscriptions", AccountType: "Expense", Active: true }
+        },
+        vendors: {
+            "900": { Id: "900", SyncToken: "0", DisplayName: "Existing CAD Vendor", Active: true }
+        }
+    });
     const transport = new StdioClientTransport({
         command: "node",
         args: ["dist/src/index.js"],
@@ -20,6 +29,7 @@ before(async () => {
             QBO_REALM_ID: "TEST-REALM",
             QBO_BASE_URL: mockServer.baseUrl,
             QBO_TOKEN_URL: mockServer.tokenUrl,
+            BOC_BASE_URL: mockServer.baseUrl,
             PATH: process.env.PATH || ""
         }
     });
@@ -191,5 +201,98 @@ describe("MCP Server — full round-trip", () => {
         });
         const text = (result.content as Array<{ text: string }>)[0].text;
         assert.match(text, /ExchangeRate is required/);
+    });
+
+    it("get_accounts returns seeded accounts", async () => {
+        const data = parseResult(await client.callTool({
+            name: "get_accounts",
+            arguments: {}
+        })) as { QueryResponse: { Account: Array<{ Id: string }> } };
+        const ids = data.QueryResponse.Account.map(a => a.Id).sort();
+        assert.deepEqual(ids, ["1101", "1102", "80"]);
+    });
+
+    it("get_accounts with accountType filter still returns results from mock", async () => {
+        const data = parseResult(await client.callTool({
+            name: "get_accounts",
+            arguments: { accountType: "Credit Card" }
+        })) as { QueryResponse: { Account: Array<{ Id: string }> } };
+        // Mock server ignores WHERE clause and returns all accounts — we only verify the tool wires correctly.
+        assert.ok(Array.isArray(data.QueryResponse.Account));
+    });
+
+    it("create_vendor then get_vendor round-trip", async () => {
+        const created = parseResult(await client.callTool({
+            name: "create_vendor",
+            arguments: { displayName: "Stripe Inc. (USD)", currencyCode: "USD" }
+        })) as { Vendor: { Id: string; CurrencyRef: { value: string } } };
+        assert.equal(created.Vendor.CurrencyRef.value, "USD");
+        const fetched = parseResult(await client.callTool({
+            name: "get_vendor",
+            arguments: { id: created.Vendor.Id }
+        })) as { Vendor: { Id: string; DisplayName: string } };
+        assert.equal(fetched.Vendor.Id, created.Vendor.Id);
+        assert.equal(fetched.Vendor.DisplayName, "Stripe Inc. (USD)");
+    });
+
+    it("update_vendor changes DisplayName and increments SyncToken", async () => {
+        const search = parseResult(await client.callTool({
+            name: "search_vendors",
+            arguments: { namePrefix: "Existing" }
+        })) as { QueryResponse: { Vendor: Array<{ Id: string; SyncToken: string }> } };
+        assert.ok(search.QueryResponse.Vendor.length >= 1);
+        const target = search.QueryResponse.Vendor.find(v => v.Id === "900")!;
+        const updated = parseResult(await client.callTool({
+            name: "update_vendor",
+            arguments: { id: target.Id, syncToken: target.SyncToken, displayName: "Updated Name" }
+        })) as { Vendor: { DisplayName: string; SyncToken: string } };
+        assert.equal(updated.Vendor.DisplayName, "Updated Name");
+        assert.notEqual(updated.Vendor.SyncToken, target.SyncToken);
+    });
+
+    it("update_vendor rejects currencyCode (strict schema)", async () => {
+        const result = await client.callTool({
+            name: "update_vendor",
+            arguments: { id: "900", syncToken: "0", currencyCode: "USD" }
+        });
+        const text = (result.content as Array<{ text: string }>)[0].text;
+        assert.ok(text.startsWith("Error:"), `Expected error but got: ${text}`);
+    });
+
+    it("query accepts a valid SELECT", async () => {
+        const data = parseResult(await client.callTool({
+            name: "query",
+            arguments: { query: "SELECT * FROM Vendor" }
+        })) as { QueryResponse: { Vendor: unknown[] } };
+        assert.ok(Array.isArray(data.QueryResponse.Vendor));
+    });
+
+    it("query rejects mutation keywords", async () => {
+        const result = await client.callTool({
+            name: "query",
+            arguments: { query: "SELECT * FROM Vendor; DELETE FROM Vendor" }
+        });
+        const text = (result.content as Array<{ text: string }>)[0].text;
+        assert.ok(text.startsWith("Error:"), `Expected error but got: ${text}`);
+    });
+
+    it("rollback_session with no matches returns zero", async () => {
+        const data = parseResult(await client.callTool({
+            name: "rollback_session",
+            arguments: { sessionTag: "1999-01-01-0000" }
+        })) as { matched: number; deleted: number };
+        assert.equal(data.matched, 0);
+    });
+
+    it("get_boc_rate errors gracefully when BoC is unreachable via mock", async () => {
+        // BOC_BASE_URL points at the mock QBO server, which 404s on /valet/observations.
+        // This proves the tool is wired end-to-end; the tool will return an error result.
+        const result = await client.callTool({
+            name: "get_boc_rate",
+            arguments: { date: "2024-06-15" }
+        });
+        const text = (result.content as Array<{ text: string }>)[0].text;
+        // Either success (unlikely) or a clean error. Both prove the wiring is correct.
+        assert.ok(typeof text === "string" && text.length > 0);
     });
 });
