@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-04-10
+
+### Added
+
+- **8 new tools** — tool surface expands from 5 to 13:
+  - `get_accounts` — chart of accounts with optional `accountType` and `active` filters.
+  - `search_vendors` — vendor query with `namePrefix` (LIKE prefix match, injection-guarded), `currencyCode`, and `active` filters.
+  - `get_vendor` — fetch single vendor by Id.
+  - `create_vendor` — create with permanent `CurrencyRef`, honors `QBO_DRY_RUN`. Currency is set at creation and cannot be changed later (QBO rule, enforced at the tool layer).
+  - `update_vendor` — sparse update by Id + SyncToken. Strict Zod schema refuses `currencyCode` entirely (matches QBO's immutability rule).
+  - `query` — guarded raw SELECT-only passthrough. Length capped at 2000 chars. Rejects semicolons, SQL comments (`--`, `/* */`), and mutation keywords (INSERT, UPDATE, DELETE, MERGE, TRUNCATE, INTO, CDC). Returns unvalidated JSON as an escape hatch.
+  - `get_boc_rate` — historical CAD/USD rate via Bank of Canada Valet API with a 7-day weekend/holiday fallback window. CRA-accepted source per Income Tax Folio S5-F4-C1. No authentication required.
+  - `rollback_session` — finds all Purchases whose `PrivateNote` contains `sess:<tag>` within a 60-day date window and soft-deletes them. Honors `QBO_DRY_RUN`. The rollback primitive for a write batch gone wrong.
+- `BOC_BASE_URL` environment variable — optional override for the Bank of Canada Valet API base URL, used for testing against a mock.
+- `src/util/boc.ts` — pure Bank of Canada Valet API fetcher with observation-window logic and graceful weekend/holiday fallback.
+- `src/util/mime-sniff.ts` — magic-byte signature helper. Signatures for PDF, PNG, JPEG, GIF, TIFF (both endiannesses), and the ZIP container used by DOCX/XLSX.
+- Expanded mock HTTP server with handlers for accounts, vendors (create and sparse update), single-vendor GET, and a query router that dispatches by `FROM Purchase|Account|Vendor`.
+- 9 new integration tests covering end-to-end round trips for all 8 new tools plus tool-list assertion at 13 tools.
+
+### Fixed
+
+- **SEC-3:** TOCTOU window between `statSync` and `readFileSync` in `upload_receipt`. Refactored to open the canonical path once via `openSync`, size-check via `fstatSync(fd)`, read into a pre-sized buffer via `readSync` in a loop, and close the fd in a `finally` block. Post-open path swaps no longer affect the read.
+- **SEC-4:** `upload_receipt` now verifies magic bytes against the declared `contentType` before upload. Rejects mismatches for PDF, PNG, JPEG, GIF, TIFF, DOCX, and XLSX. `text/plain` and `text/csv` skip sniffing (no reliable magic). Prevents `.exe`-renamed-to-`.pdf` attacks.
+
+### Unchanged
+
+- No new runtime dependencies. Still only `@modelcontextprotocol/sdk` and `zod`.
+- OAuth flow, rate limiter, and multipart upload logic are untouched.
+- All v0.1.x write paths retain their dry-run and session-tag semantics.
+- Existing 5 tools and their schemas are backwards-compatible.
+
+### Known limitations / deferred
+
+- **No npm publish yet.** v0.2.0 is published via GitHub release only. Install via `git clone` or `npm install github:mohammadfarooqi/qbo-receipts-mcp#v0.2.0`. npm publish deferred until after a full sandbox USD round trip against real Intuit.
+- **DOCX/XLSX disambiguation** — `sniffMimeType` verifies ZIP container headers but does not inspect the inner directory structure. A generic ZIP declared as DOCX will pass.
+- **SEC-10** (Unicode homoglyph bypass in `query` tool mutation-keyword regex) — fullwidth Latin characters like `ＤＥＬＥＴＥ` pass the keyword check. Non-exploitable because QBO's `/query` endpoint is a read-only GET and does not execute DML.
+- **SEC-5, SEC-6, BUG-1, BUG-2** (filename Unicode RLO, memo marker escape, `exchangeRate: 0` builder guard, dry-run payload cloning) remain tracked in `docs/backlog.md`. None block the catch-up workflow.
+- **No `batch` endpoint wrapper** — `rollback_session` loops over soft-delete calls rather than using QBO's `/batch`. Fine at current scale (5-10 rows per session).
+- **No MCP registry entry** — `server.json` for the Anthropic MCP registry is pending.
+
+### Testing
+
+- 162 tests passing (unit + integration, all against a local mock HTTP server).
+- No changes to CI matrix (Node 18 / 20 / 22).
+
+---
+
 ## [0.1.2] — 2026-04-10
 
 ### Changed
