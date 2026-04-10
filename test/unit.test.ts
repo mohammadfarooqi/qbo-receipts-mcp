@@ -1046,3 +1046,55 @@ describe("get-accounts — buildAccountsQuery", () => {
         assert.equal(q, "SELECT * FROM Account WHERE AccountType = 'Expense' AND Active = true ORDER BY Name MAXRESULTS 50");
     });
 });
+
+import { buildVendorsQuery, searchVendorsInputSchema } from "../src/tools/search-vendors.js";
+
+describe("search-vendors — input validation", () => {
+    it("defaults maxResults to 500", () => {
+        assert.equal(searchVendorsInputSchema.parse({}).maxResults, 500);
+    });
+
+    it("rejects single quotes in namePrefix (SQL injection guard)", () => {
+        assert.throws(() => searchVendorsInputSchema.parse({ namePrefix: "O'Brien" }));
+    });
+
+    it("rejects percent signs in namePrefix", () => {
+        assert.throws(() => searchVendorsInputSchema.parse({ namePrefix: "foo%" }));
+    });
+
+    it("accepts a clean namePrefix with spaces, dots, parens, digits", () => {
+        const parsed = searchVendorsInputSchema.parse({ namePrefix: "Stripe Inc. (USD) 2024" });
+        assert.equal(parsed.namePrefix, "Stripe Inc. (USD) 2024");
+    });
+
+    it("rejects lowercase currencyCode", () => {
+        assert.throws(() => searchVendorsInputSchema.parse({ currencyCode: "usd" }));
+    });
+});
+
+describe("search-vendors — buildVendorsQuery", () => {
+    it("builds bare query with MAXRESULTS", () => {
+        const q = buildVendorsQuery({ maxResults: 500 });
+        assert.equal(q, "SELECT * FROM Vendor ORDER BY DisplayName MAXRESULTS 500");
+    });
+
+    it("adds a DisplayName LIKE clause for namePrefix", () => {
+        const q = buildVendorsQuery({ namePrefix: "Acme", maxResults: 500 });
+        assert.equal(q, "SELECT * FROM Vendor WHERE DisplayName LIKE 'Acme%' ORDER BY DisplayName MAXRESULTS 500");
+    });
+
+    it("adds currencyCode clause", () => {
+        const q = buildVendorsQuery({ currencyCode: "USD", maxResults: 500 });
+        assert.equal(q, "SELECT * FROM Vendor WHERE CurrencyRef = 'USD' ORDER BY DisplayName MAXRESULTS 500");
+    });
+
+    it("adds Active clause", () => {
+        const q = buildVendorsQuery({ active: true, maxResults: 500 });
+        assert.equal(q, "SELECT * FROM Vendor WHERE Active = true ORDER BY DisplayName MAXRESULTS 500");
+    });
+
+    it("combines all three clauses", () => {
+        const q = buildVendorsQuery({ namePrefix: "Stripe", currencyCode: "USD", active: true, maxResults: 100 });
+        assert.equal(q, "SELECT * FROM Vendor WHERE DisplayName LIKE 'Stripe%' AND CurrencyRef = 'USD' AND Active = true ORDER BY DisplayName MAXRESULTS 100");
+    });
+});
