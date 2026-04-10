@@ -36,6 +36,18 @@ Fixed in Task 25 hardening commit. `validateUploadReceiptInput` now normalizes e
 **Details:** In `formatMemoMarker`, `sourceId` and `existingNote` flowed into `PrivateNote` without escaping. If `sourceId` contained `| sess:fake-tag`, a rollback query matching `sess:<tag>` could match unintended records. v0.2.0's `rollback_session` tool turned this from a cosmetic issue into a cross-tool exploit path.
 **Fix:** `createPurchaseInputSchema` now validates `sourceId` against `/^[A-Za-z0-9._:\-@]+$/` (max 200 chars) and rejects the substring `sess:`. `formatMemoMarker` rejects `existingNote` values containing `|`, CR, LF, or NUL.
 
+### [BUG-3] `create_purchase` requires exchangeRate when currencyCode is set, even for home currency — FIXED 2026-04-10 (v0.2.2)
+**Source:** Real Intuit sandbox smoke test 2026-04-10 (v0.2.0 validation)
+**Severity:** Medium
+**Details:** `buildPurchasePayload` throws `"ExchangeRate is required when currencyCode is set"` whenever `currencyCode` is provided, regardless of whether it matches home currency. In practice a caller passing `currencyCode: "CAD"` to a CAD-home company is a valid no-op but is currently rejected. The workaround is to simply omit `currencyCode` for home-currency writes (QBO infers from the payment account's currency).
+**Fix:** Improved the error message to explain that home-currency transactions should omit `currencyCode` entirely, and that foreign-currency transactions must provide an explicit exchange rate. Updated the `currencyCode` field description to document the intent. The guard itself is retained as a useful safeguard against silent misuse.
+
+### [SCHEMA-2] `CurrencyRef` is not a queryable property in QBO's query language — FIXED 2026-04-10 (v0.2.2)
+**Source:** Real Intuit sandbox smoke test 2026-04-10 (v0.2.0 validation)
+**Severity:** Medium
+**Details:** `buildPurchaseQuery` supported a `currencyCode` filter that generated `WHERE CurrencyRef = 'USD'`. QBO's `/query` endpoint returns `{"Message":"Invalid query","Detail":"QueryValidationError: property 'CurrencyRef' is not queryable","code":"4001"}`. The mock server did not enforce queryable-property rules so this slipped through all prior tests. `search_vendors` had the same problem.
+**Fix:** Removed `currencyCode` from `searchPurchasesInputSchema` and `searchVendorsInputSchema`. Removed corresponding `CurrencyRef` WHERE clause generation from both builders. Added JSDoc comments on both builder functions explaining the restriction. Added SCHEMA-2 regression tests verifying the schema silently drops the field and the builders never emit `CurrencyRef`. Callers needing currency matching should filter client-side on the returned rows' `CurrencyRef.value` field.
+
 ### [SAFETY-1] rollback_session unbounded date window — FIXED 2026-04-10 (v0.2.1)
 **Source:** Opus cross-cutting code review of v0.2.0 (2026-04-10)
 **Details:** `rollback_session` accepted arbitrary `txnDateAfter`/`txnDateBefore` with only format-regex validation, turning the default 60-day window into an optional mass-delete primitive spanning the entire purchase history.
@@ -55,22 +67,6 @@ Fixed in Tasks 20 + 21 of the v0.2.0 plan. New helper `src/util/mime-sniff.ts` e
 **Fix (if ever needed):** Unicode-normalize (NFKC) the input before running the keyword check, or reject non-ASCII characters entirely.
 
 ---
-
-## v0.2.x (discovered during real-sandbox validation — must-fix before npm publish)
-
-### [BUG-3] `create_purchase` requires exchangeRate when currencyCode is set, even for home currency
-**Source:** Real Intuit sandbox smoke test 2026-04-10 (v0.2.0 validation)
-**Severity:** Medium
-**Details:** `buildPurchasePayload` throws `"ExchangeRate is required when currencyCode is set"` whenever `currencyCode` is provided, regardless of whether it matches home currency. In practice a caller passing `currencyCode: "CAD"` to a CAD-home company is a valid no-op but is currently rejected. The workaround is to simply omit `currencyCode` for home-currency writes (QBO infers from the payment account's currency).
-**Fix:** Either (a) remove the requirement entirely and let QBO reject at the API layer if ExchangeRate is actually needed, (b) pass the home currency as a required input parameter so we can compare, or (c) only require ExchangeRate when `currencyCode !== "CAD"` as a hardcoded project-specific default. Option (a) is simplest; the existing Zod schema already documents the ExchangeRate field as "REQUIRED if currencyCode differs from home currency" but the runtime guard is stricter than that docstring.
-**Impact:** Low in practice — real catch-up workflows should omit currencyCode for CAD purchases and always provide exchangeRate for USD. But the error message is misleading.
-
-### [SCHEMA-2] `CurrencyRef` is not a queryable property in QBO's query language
-**Source:** Real Intuit sandbox smoke test 2026-04-10 (v0.2.0 validation)
-**Severity:** Medium
-**Details:** `buildPurchaseQuery` supports a `currencyCode` filter that generates `WHERE CurrencyRef = 'USD'`. QBO's `/query` endpoint returns `{"Message":"Invalid query","Detail":"QueryValidationError: property 'CurrencyRef' is not queryable","code":"4001"}`. The mock server does not enforce queryable-property rules so this slipped through all prior tests. The `search_vendors` tool has the same filter option and may have the same problem — needs validation.
-**Fix:** Remove the `currencyCode` filter from `searchPurchasesInputSchema` and `buildPurchaseQuery`. Callers who need currency matching should filter client-side on the returned rows. For `search_vendors`, test against real sandbox to confirm whether `WHERE CurrencyRef = 'USD'` works on Vendor entities (possible — Vendor may have different queryable-property rules than Purchase).
-**Regression test idea:** run the real smoke test script in CI-lite mode when possible, or add a mock-server rule that rejects `WHERE CurrencyRef` clauses to match Intuit's behavior.
 
 ### [SEC-5] Unicode/RLO/zero-width characters in filenames
 **Source:** Opus security review of Task 25 (2026-04-10)
