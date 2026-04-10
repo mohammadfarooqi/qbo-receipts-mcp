@@ -896,6 +896,7 @@ describe("schema — AccountSchema", () => {
             SomeNewFutureField: "ok"
         });
         assert.equal(parsed.Id, "9");
+        assert.equal((parsed as Record<string, unknown>)["SomeNewFutureField"], "ok");
     });
 });
 
